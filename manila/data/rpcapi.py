@@ -39,3 +39,19 @@ class DataAPI(object):
         target = messaging.Target(topic=CONF.data_topic,
                                   version=self.BASE_RPC_API_VERSION)
         self.client = rpc.get_client(target, version_cap='1.0')
+
+    def migrate_share(self, ctxt, share_id, saved_rules, ignore_list,
+                      share_instance_id, new_share_instance_id,
+                      migration_info_src, migration_info_dest, notify):
+        cctxt = self.client.prepare(version='1.0')
+        cctxt.cast(
+            ctxt,
+            'migrate_share',
+            share_id=share_id,
+            saved_rules=saved_rules,
+            ignore_list=ignore_list,
+            share_instance_id=share_instance_id,
+            new_share_instance_id=new_share_instance_id,
+            migration_info_src=migration_info_src,
+            migration_info_dest=migration_info_dest,
+            notify=notify)

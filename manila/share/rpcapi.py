@@ -46,6 +46,7 @@ class ShareAPI(object):
             get_migration_info()
             get_driver_migration_info()
         1.7 - Update target call API in allow/deny access methods
+        1.8 - Add migration_completion()
     """
 
     BASE_RPC_API_VERSION = '1.0'
@@ -54,7 +55,7 @@ class ShareAPI(object):
         super(ShareAPI, self).__init__()
         target = messaging.Target(topic=CONF.share_topic,
                                   version=self.BASE_RPC_API_VERSION)
-        self.client = rpc.get_client(target, version_cap='1.7')
+        self.client = rpc.get_client(target, version_cap='1.8')
 
     def create_share_instance(self, ctxt, share_instance, host,
                               request_spec, filter_properties,
@@ -200,3 +201,14 @@ class ShareAPI(object):
             ctxt,
             'delete_cgsnapshot',
             cgsnapshot_id=cgsnapshot['id'])
+
+    def migration_completion(self, ctxt, share, share_instance_id,
+                             new_share_instance_id, saved_rules, error):
+        new_host = utils.extract_host(share['host'])
+        cctxt = self.client.prepare(server=new_host, version='1.8')
+        cctxt.cast(ctxt, 'migration_completion',
+                   share_id=share['id'],
+                   share_instance_id=share_instance_id,
+                   new_share_instance_id=new_share_instance_id,
+                   saved_rules=saved_rules,
+                   error=error)

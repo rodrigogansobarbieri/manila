@@ -20,10 +20,13 @@ import copy
 
 import mock
 from oslo_config import cfg
+from oslo_serialization import jsonutils
 
+from manila.common import constants
 from manila import context
 from manila.data import rpcapi as data_rpcapi
 from manila import test
+from manila.tests import db_utils
 
 CONF = cfg.CONF
 
@@ -32,6 +35,12 @@ class DataRpcAPITestCase(test.TestCase):
 
     def setUp(self):
         super(DataRpcAPITestCase, self).setUp()
+        self.context = context.get_admin_context()
+        share = db_utils.create_share(
+            availability_zone=CONF.storage_availability_zone,
+            status=constants.STATUS_AVAILABLE
+        )
+        self.fake_share = jsonutils.to_primitive(share)
 
     def tearDown(self):
         super(DataRpcAPITestCase, self).tearDown()
@@ -71,3 +80,16 @@ class DataRpcAPITestCase(test.TestCase):
                 expected_args = [ctxt, method, expected_msg]
                 for arg, expected_arg in zip(self.fake_args, expected_args):
                     self.assertEqual(expected_arg, arg)
+
+    def test_migrate_share(self):
+        self._test_data_api('migrate_share',
+                            rpc_method='cast',
+                            version='1.0',
+                            share_id=self.fake_share['id'],
+                            saved_rules=[],
+                            ignore_list=[],
+                            share_instance_id='fake_ins_id',
+                            new_share_instance_id='new_fake_ins_id',
+                            migration_info_src={},
+                            migration_info_dest={},
+                            notify=True)
