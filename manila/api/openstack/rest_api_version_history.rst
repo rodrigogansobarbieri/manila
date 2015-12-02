@@ -65,3 +65,8 @@ user documentation.
 2.7
 ---
   Rename old extension-like API URLs to core-API-like.
+
+2.8
+---
+  Field 'state' was removed from access_get method.
+  Field 'access_rules_status' was added to shares and share instances.

@@ -460,9 +460,10 @@ def share_instance_access_delete(context, mapping_id):
     return IMPL.share_instance_access_delete(context, mapping_id)
 
 
-def share_instance_access_update_state(context, mapping_id, state):
-    """Update state of access rule mapping."""
-    return IMPL.share_instance_access_update_state(context, mapping_id, state)
+def share_instance_update_access_status(context, share_instance_id, status):
+    """Update access rules status of share instance."""
+    return IMPL.share_instance_update_access_status(context, share_instance_id,
+                                                    status)
 
 
 ####################

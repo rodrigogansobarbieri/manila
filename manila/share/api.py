@@ -762,11 +762,12 @@ class API(base.Base):
             'access_to': access_to,
             'access_level': access_level,
         }
-        for access in self.db.share_access_get_all_by_type_and_access(
-                ctx, share['id'], access_type, access_to):
-            if access['state'] != constants.STATUS_ERROR:
+
+        if len(self.db.share_access_get_all_by_type_and_access(
+                ctx, share['id'], access_type, access_to)) > 0:
                 raise exception.ShareAccessExists(access_type=access_type,
                                                   access=access_to)
+
         if access_level not in constants.ACCESS_LEVELS + (None, ):
             msg = _("Invalid share access level: %s.") % access_level
             raise exception.InvalidShareAccess(reason=msg)
@@ -780,7 +781,6 @@ class API(base.Base):
             'access_type': access['access_type'],
             'access_to': access['access_to'],
             'access_level': access['access_level'],
-            'state': access['state'],
         }
 
     def allow_access_to_instance(self, context, share_instance, access):
@@ -789,6 +789,18 @@ class API(base.Base):
         if not share_instance['host']:
             msg = _("Invalid share instance host: %s") % share_instance['host']
             raise exception.InvalidShareInstance(reason=msg)
+
+        if share_instance['access_rules_status'] != constants.STATUS_ACTIVE:
+            status = share_instance['access_rules_status']
+            msg = _("Share instance should have 'active' access rules status,"
+                    " but current status is: %(status)s.") % status
+
+            raise exception.InvalidShareInstance(reason=msg)
+
+        self.db.share_instance_update_access_status(
+            context, share_instance['id'],
+            constants.STATUS_OUT_OF_SYNC
+        )
 
         self.share_rpcapi.allow_access(context, share_instance, access)
 
@@ -804,27 +816,14 @@ class API(base.Base):
             msg = _("Share status must be %s") % constants.STATUS_AVAILABLE
             raise exception.InvalidShare(reason=msg)
 
-        # Then check state of the access rule
-        if (access['state'] == constants.STATUS_ERROR and not
-                self.db.share_instance_access_get_all(ctx, access['id'])):
-            self.db.share_access_delete(ctx, access["id"])
-
-        elif access['state'] in [constants.STATUS_ACTIVE,
-                                 constants.STATUS_ERROR]:
-            for share_instance in share.instances:
-                try:
-                    self.deny_access_to_instance(ctx, share_instance, access)
-                except exception.NotFound:
-                    LOG.warn(_LW("Access rule %(access_id)s not found "
-                                 "for instance %(instance_id)s.") % {
-                        'access_id': access['id'],
-                        'instance_id': share_instance['id']})
-        else:
-            msg = _("Access policy should be %(active)s or in %(error)s "
-                    "state") % {"active": constants.STATUS_ACTIVE,
-                                "error": constants.STATUS_ERROR}
-            raise exception.InvalidShareAccess(reason=msg)
-            # update share state and send message to manager
+        for share_instance in share.instances:
+            try:
+                self.deny_access_to_instance(ctx, share_instance, access)
+            except exception.NotFound:
+                LOG.warn(_LW("Access rule %(access_id)s not found "
+                             "for instance %(instance_id)s.") % {
+                    'access_id': access['id'],
+                    'instance_id': share_instance['id']})
 
     def deny_access_to_instance(self, context, share_instance, access):
         policy.check_policy(context, 'share', 'deny_access')
@@ -833,11 +832,17 @@ class API(base.Base):
             msg = _("Invalid share instance host: %s") % share_instance['host']
             raise exception.InvalidShareInstance(reason=msg)
 
-        access_mapping = self.db.share_instance_access_get(
-            context, access['id'], share_instance['id'])
-        self.db.share_instance_access_update_state(
-            context, access_mapping['id'],
-            access_mapping.STATE_DELETING)
+        if share_instance['access_rules_status'] != constants.STATUS_ACTIVE:
+            status = share_instance['access_rules_status']
+            msg = _("Share instance should have 'active' access rules status,"
+                    " but current status is: %(status)s.") % status
+
+            raise exception.InvalidShareInstance(reason=msg)
+
+        self.db.share_instance_update_access_status(
+            context, share_instance['id'],
+            constants.STATUS_OUT_OF_SYNC
+        )
 
         self.share_rpcapi.deny_access(context, share_instance, access)
 
@@ -849,7 +854,7 @@ class API(base.Base):
                  'access_type': rule.access_type,
                  'access_to': rule.access_to,
                  'access_level': rule.access_level,
-                 'state': rule.state} for rule in rules]
+                 } for rule in rules]
 
     def access_get(self, context, access_id):
         """Returns access rule with the id."""

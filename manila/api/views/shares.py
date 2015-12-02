@@ -25,6 +25,7 @@ class ViewBuilder(common.ViewBuilder):
         "add_consistency_group_fields",
         "add_task_state_field",
         "modify_share_type_field",
+        "add_access_rules_status_field",
     ]
 
     def summary_list(self, request, shares):
@@ -116,6 +117,10 @@ class ViewBuilder(common.ViewBuilder):
             'share_type_name': share_type_name,
             'share_type': share_type,
         })
+
+    @common.ViewBuilder.versioned_method("2.8")
+    def add_access_rules_status_field(self, share_dict, share):
+        share_dict['access_rules_status'] = share.get('access_rules_status')
 
     def _list_view(self, func, request, shares):
         """Provide a view for a list of shares."""

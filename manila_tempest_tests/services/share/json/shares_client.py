@@ -220,17 +220,17 @@ class SharesClient(rest_client.RestClient):
         self.expected_success(202, resp.status)
         return body
 
-    def wait_for_share_status(self, share_id, status):
+    def wait_for_share_status(self, share_id, status, status_attr='status'):
         """Waits for a share to reach a given status."""
         body = self.get_share(share_id)
         share_name = body['name']
-        share_status = body['status']
+        share_status = body[status_attr]
         start = int(time.time())
 
         while share_status != status:
             time.sleep(self.build_interval)
             body = self.get_share(share_id)
-            share_status = body['status']
+            share_status = body[status_attr]
             if share_status == status:
                 return
             elif 'error' in share_status.lower():
@@ -262,27 +262,6 @@ class SharesClient(rest_client.RestClient):
                 message = ('Share Snapshot %s failed to reach %s status '
                            'within the required time (%s s).' %
                            (snapshot_name, status, self.build_timeout))
-                raise exceptions.TimeoutException(message)
-
-    def wait_for_access_rule_status(self, share_id, rule_id, status):
-        """Waits for an access rule to reach a given status."""
-        rule_status = "new"
-        start = int(time.time())
-        while rule_status != status:
-            time.sleep(self.build_interval)
-            rules = self.list_access_rules(share_id)
-            for rule in rules:
-                if rule["id"] in rule_id:
-                    rule_status = rule['state']
-                    break
-            if 'error' in rule_status:
-                raise share_exceptions.\
-                    AccessRuleBuildErrorException(rule_id=rule_id)
-
-            if int(time.time()) - start >= self.build_timeout:
-                message = ('Share Access Rule %s failed to reach %s status '
-                           'within the required time (%s s).' %
-                           (rule_id, status, self.build_timeout))
                 raise exceptions.TimeoutException(message)
 
     def default_quotas(self, tenant_id):

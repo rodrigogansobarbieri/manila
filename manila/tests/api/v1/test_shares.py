@@ -402,6 +402,17 @@ class ShareAPITest(test.TestCase):
         expected['share']['task_state'] = None
         self.assertEqual(expected, res_dict)
 
+    def test_share_show_with_access_rules_status(self):
+        req = fakes.HTTPRequest.blank('/shares/1', version='2.8')
+        res_dict = self.controller.show(req, '1')
+        expected = self._get_expected_share_detailed_response()
+        expected['share']['consistency_group_id'] = None
+        expected['share']['source_cgsnapshot_member_id'] = None
+        expected['share']['share_type_name'] = None
+        expected['share']['task_state'] = None
+        expected['share']['access_rules_status'] = 'active'
+        self.assertEqual(expected, res_dict)
+
     def test_share_show_admin(self):
         req = fakes.HTTPRequest.blank('/shares/1', use_admin_context=True)
         expected = self._get_expected_share_detailed_response(admin=True)
@@ -731,6 +742,18 @@ class ShareAPITest(test.TestCase):
         expected['shares'][0]['consistency_group_id'] = None
         expected['shares'][0]['source_cgsnapshot_member_id'] = None
         expected['shares'][0]['task_state'] = None
+        self._list_detail_test_common(req, expected)
+
+    def test_share_list_detail_with_access_rules_status(self):
+        env = {'QUERY_STRING': 'name=Share+Test+Name'}
+        req = fakes.HTTPRequest.blank('/shares/detail', environ=env,
+                                      version="2.8")
+        expected = self._list_detail_common_expected()
+        expected['shares'][0]['consistency_group_id'] = None
+        expected['shares'][0]['source_cgsnapshot_member_id'] = None
+        expected['shares'][0]['task_state'] = None
+        expected['shares'][0]['share_type_name'] = None
+        expected['shares'][0]['access_rules_status'] = 'active'
         self._list_detail_test_common(req, expected)
 
     def test_remove_invalid_options(self):

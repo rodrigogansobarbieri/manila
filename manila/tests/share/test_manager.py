@@ -29,6 +29,7 @@ from manila import db
 from manila.db.sqlalchemy import models
 from manila import exception
 from manila import quota
+from manila.share import access as share_access
 from manila.share import drivers_private_data
 from manila.share import manager
 from manila.share import migration
@@ -244,8 +245,11 @@ class ShareManagerTestCase(test.TestCase):
         self.mock_object(self.share_manager.db,
                          'share_access_get_all_for_share',
                          mock.Mock(return_value=rules))
-        self.mock_object(self.share_manager.driver, 'allow_access',
-                         mock.Mock(side_effect=raise_share_access_exists))
+        self.mock_object(
+            self.share_manager.access_helper,
+            'update_access_rules',
+            mock.Mock(side_effect=raise_share_access_exists)
+        )
 
         # call of 'init_host' method
         self.share_manager.init_host()
@@ -277,20 +281,12 @@ class ShareManagerTestCase(test.TestCase):
             mock.call(utils.IsAMatcher(context.RequestContext), instances[2],
                       share_server=share_server),
         ])
-        self.share_manager.db.share_access_get_all_for_share.assert_has_calls([
-            mock.call(utils.IsAMatcher(context.RequestContext),
-                      instances[0]['share_id']),
-            mock.call(utils.IsAMatcher(context.RequestContext),
-                      instances[2]['share_id']),
-        ])
         self.share_manager.publish_service_capabilities.\
             assert_called_once_with(
                 utils.IsAMatcher(context.RequestContext))
-        self.share_manager.driver.allow_access.assert_has_calls([
-            mock.call(mock.ANY, instances[0], rules[0],
-                      share_server=share_server),
-            mock.call(mock.ANY, instances[2], rules[0],
-                      share_server=share_server),
+        self.share_manager.access_helper.update_access_rules.assert_has_calls([
+            mock.call(mock.ANY, instances[0], share_server=share_server),
+            mock.call(mock.ANY, instances[2], share_server=share_server),
         ])
 
     def test_init_host_with_exception_on_ensure_share(self):
@@ -351,51 +347,50 @@ class ShareManagerTestCase(test.TestCase):
             {'id': instances[1]['id'], 'status': instances[1]['status']},
         )
 
-    def test_init_host_with_exception_on_rule_access_allow(self):
+    def test_init_host_with_exception_on_update_access_rules(self):
         def raise_exception(*args, **kwargs):
             raise exception.ManilaException(message="Fake raise")
 
         instances, rules = self._setup_init_mocks()
         share_server = 'fake_share_server_type_does_not_matter'
-        self.mock_object(self.share_manager.db,
-                         'share_instances_get_all_by_host',
+        smanager = self.share_manager
+        self.mock_object(smanager.db, 'share_instances_get_all_by_host',
                          mock.Mock(return_value=instances))
         self.mock_object(self.share_manager.db, 'share_instance_get',
                          mock.Mock(side_effect=[instances[0], instances[2],
                                                 instances[3]]))
         self.mock_object(self.share_manager.driver, 'ensure_share',
                          mock.Mock(return_value=None))
-        self.mock_object(self.share_manager, '_ensure_share_instance_has_pool')
-        self.mock_object(self.share_manager, '_get_share_server',
+        self.mock_object(smanager, '_ensure_share_instance_has_pool')
+        self.mock_object(smanager, '_get_share_server',
                          mock.Mock(return_value=share_server))
-        self.mock_object(self.share_manager, 'publish_service_capabilities')
+        self.mock_object(smanager, 'publish_service_capabilities')
         self.mock_object(manager.LOG, 'error')
         self.mock_object(manager.LOG, 'info')
-        self.mock_object(self.share_manager.db,
-                         'share_access_get_all_for_share',
+        self.mock_object(smanager.db, 'share_access_get_all_for_share',
                          mock.Mock(return_value=rules))
-        self.mock_object(self.share_manager.driver, 'allow_access',
+        self.mock_object(smanager.access_helper, 'update_access_rules',
                          mock.Mock(side_effect=raise_exception))
 
         # call of 'init_host' method
-        self.share_manager.init_host()
+        smanager.init_host()
 
         # verification of call
-        self.share_manager.db.share_instances_get_all_by_host.\
+        smanager.db.share_instances_get_all_by_host.\
             assert_called_once_with(utils.IsAMatcher(context.RequestContext),
-                                    self.share_manager.host)
-        self.share_manager.driver.do_setup.assert_called_once_with(
+                                    smanager.host)
+        smanager.driver.do_setup.assert_called_once_with(
             utils.IsAMatcher(context.RequestContext))
-        self.share_manager.driver.check_for_setup_error.assert_called_with()
-        self.share_manager._ensure_share_instance_has_pool.assert_has_calls([
+        smanager.driver.check_for_setup_error.assert_called_with()
+        smanager._ensure_share_instance_has_pool.assert_has_calls([
             mock.call(utils.IsAMatcher(context.RequestContext), instances[0]),
             mock.call(utils.IsAMatcher(context.RequestContext), instances[2]),
         ])
-        self.share_manager._get_share_server.assert_has_calls([
+        smanager._get_share_server.assert_has_calls([
             mock.call(utils.IsAMatcher(context.RequestContext), instances[0]),
             mock.call(utils.IsAMatcher(context.RequestContext), instances[2]),
         ])
-        self.share_manager.driver.ensure_share.assert_has_calls([
+        smanager.driver.ensure_share.assert_has_calls([
             mock.call(utils.IsAMatcher(context.RequestContext), instances[0],
                       share_server=share_server),
             mock.call(utils.IsAMatcher(context.RequestContext), instances[2],
@@ -413,11 +408,11 @@ class ShareManagerTestCase(test.TestCase):
             mock.ANY,
             {'id': instances[1]['id'], 'status': instances[1]['status']},
         )
-        self.share_manager.driver.allow_access.assert_has_calls([
+        smanager.access_helper.update_access_rules.assert_has_calls([
             mock.call(utils.IsAMatcher(context.RequestContext), instances[0],
-                      rules[0], share_server=share_server),
+                      share_server=share_server),
             mock.call(utils.IsAMatcher(context.RequestContext), instances[2],
-                      rules[0], share_server=share_server),
+                      share_server=share_server),
         ])
         manager.LOG.error.assert_has_calls([
             mock.call(mock.ANY, mock.ANY),
@@ -1107,7 +1102,8 @@ class ShareManagerTestCase(test.TestCase):
         self.share_manager.db.quota_usage_create.assert_called_once_with(
             mock.ANY, project_id, mock.ANY, resource_name, usage)
 
-    def _setup_unmanage_mocks(self, mock_driver=True, mock_unmanage=None):
+    def _setup_unmanage_mocks(self, mock_driver=True, mock_unmanage=None,
+                              ):
         if mock_driver:
             self.mock_object(self.share_manager, 'driver')
 
@@ -1180,8 +1176,11 @@ class ShareManagerTestCase(test.TestCase):
         manager.CONF.unmanage_remove_access_rules = True
         self._setup_unmanage_mocks(mock_driver=False,
                                    mock_unmanage=mock.Mock())
-        self.mock_object(self.share_manager, '_remove_share_access_rules',
-                         mock.Mock(side_effect=Exception()))
+        self.mock_object(
+            self.share_manager.access_helper,
+            'update_access_rules',
+            mock.Mock(side_effect=Exception())
+        )
         self.mock_object(quota.QUOTAS, 'reserve', mock.Mock(return_value=[]))
         share = db_utils.create_share()
 
@@ -1195,36 +1194,21 @@ class ShareManagerTestCase(test.TestCase):
         manager.CONF.unmanage_remove_access_rules = True
         self._setup_unmanage_mocks(mock_driver=False,
                                    mock_unmanage=mock.Mock())
-        self.mock_object(self.share_manager, '_remove_share_access_rules')
+        smanager = self.share_manager
+        self.mock_object(smanager.access_helper, 'update_access_rules')
         self.mock_object(quota.QUOTAS, 'reserve', mock.Mock(return_value=[]))
         share = db_utils.create_share()
         share_id = share['id']
 
-        self.share_manager.unmanage_share(self.context, share_id)
+        smanager.unmanage_share(self.context, share_id)
 
-        self.share_manager.driver.unmanage.\
-            assert_called_once_with(mock.ANY)
-        self.share_manager._remove_share_access_rules.assert_called_once_with(
-            mock.ANY, mock.ANY, mock.ANY, mock.ANY
+        smanager.driver.unmanage.assert_called_once_with(mock.ANY)
+        smanager.access_helper.update_access_rules.assert_called_once_with(
+            mock.ANY, mock.ANY, delete_rules='all', share_server=None
         )
-        self.share_manager.db.share_update.assert_called_once_with(
+        smanager.db.share_update.assert_called_once_with(
             mock.ANY, share_id,
             {'status': constants.STATUS_UNMANAGED, 'deleted': True})
-
-    def test_remove_share_access_rules(self):
-        self.mock_object(self.share_manager.db,
-                         'share_access_get_all_for_share',
-                         mock.Mock(return_value=['fake_ref', 'fake_ref2']))
-        self.mock_object(self.share_manager, '_deny_access')
-        share_ref = db_utils.create_share()
-        share_server = 'fake'
-
-        self.share_manager._remove_share_access_rules(
-            self.context, share_ref, share_ref.instance, share_server)
-
-        self.share_manager.db.share_access_get_all_for_share.\
-            assert_called_once_with(mock.ANY, share_ref['id'])
-        self.assertEqual(2, self.share_manager._deny_access.call_count)
 
     def test_delete_share_instance_share_server_not_found(self):
         share_net = db_utils.create_share_network()
@@ -1321,28 +1305,27 @@ class ShareManagerTestCase(test.TestCase):
 
     def test_allow_deny_access(self):
         """Test access rules to share can be created and deleted."""
-        self.mock_object(manager.LOG, 'info')
+        self.mock_object(share_access.LOG, 'info')
 
         share = db_utils.create_share()
         share_id = share['id']
         access = db_utils.create_access(share_id=share_id)
         access_id = access['id']
         self.share_manager.allow_access(self.context, share.instance['id'],
-                                        access_id)
-        self.assertEqual('active', db.share_access_get(self.context,
-                                                       access_id).state)
+                                        [access_id])
+        self.assertEqual('active', db.share_instance_get(
+            self.context, share.instance['id']).access_rules_status)
 
-        exp_args = {'access_level': access['access_level'],
-                    'share_instance_id': share.instance['id'],
-                    'access_to': access['access_to']}
-        manager.LOG.info.assert_called_with(mock.ANY, exp_args)
-        manager.LOG.info.reset_mock()
+        share_access.LOG.info.assert_called_with(mock.ANY,
+                                                 share.instance['id'])
+        share_access.LOG.info.reset_mock()
 
         self.share_manager.deny_access(self.context, share.instance['id'],
-                                       access_id)
-        exp_args = {'share_instance_id': share.instance['id'],
-                    'access_to': access['access_to']}
-        manager.LOG.info.assert_called_with(mock.ANY, exp_args)
+                                       [access_id])
+
+        share_access.LOG.info.assert_called_with(mock.ANY,
+                                                 share.instance['id'])
+        share_access.LOG.info.reset_mock()
 
     def test_allow_deny_access_error(self):
         """Test access rules to share can be created and deleted with error."""
@@ -1353,33 +1336,26 @@ class ShareManagerTestCase(test.TestCase):
         def _fake_deny_access(self, *args, **kwargs):
             raise exception.NotFound()
 
-        self.mock_object(self.share_manager.driver, "allow_access",
-                         _fake_allow_access)
-        self.mock_object(self.share_manager.driver, "deny_access",
-                         _fake_deny_access)
+        self.mock_object(self.share_manager.access_helper.driver,
+                         "allow_access", _fake_allow_access)
+        self.mock_object(self.share_manager.access_helper.driver,
+                         "deny_access", _fake_deny_access)
 
         share = db_utils.create_share()
         share_id = share['id']
         access = db_utils.create_access(share_id=share_id)
         access_id = access['id']
 
-        self.assertRaises(exception.NotFound,
-                          self.share_manager.allow_access,
-                          self.context,
-                          share.instance['id'],
-                          access_id)
+        def validate(method):
+            self.assertRaises(exception.NotFound, method, self.context,
+                              share.instance['id'], [access_id])
 
-        acs = db.share_access_get(self.context, access_id)
-        self.assertEqual(constants.STATUS_ERROR, acs['state'])
+            inst = db.share_instance_get(self.context, share.instance['id'])
+            self.assertEqual(constants.STATUS_ERROR,
+                             inst['access_rules_status'])
 
-        self.assertRaises(exception.NotFound,
-                          self.share_manager.deny_access,
-                          self.context,
-                          share.instance['id'],
-                          access_id)
-
-        acs = db.share_access_get(self.context, access_id)
-        self.assertEqual(constants.STATUS_ERROR, acs['state'])
+        validate(self.share_manager.allow_access)
+        validate(self.share_manager.deny_access)
 
     def test_setup_server(self):
         # Setup required test data

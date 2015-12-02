@@ -103,10 +103,10 @@ class ShareIpRulesForNFSNegativeTest(base.BaseSharesTest):
         access_to = "1.2.3.4"
 
         # create rule
-        rule = self.shares_client.create_access_rule(
+        self.shares_client.create_access_rule(
             self.share["id"], access_type, access_to)
-        self.shares_client.wait_for_access_rule_status(
-            self.share["id"], rule["id"], "active")
+        self.shares_v2_client.wait_for_share_status(
+            self.share["id"], "active", status_attr='access_rules_status')
 
         # try create duplicate of rule
         self.assertRaises(lib_exc.BadRequest,
