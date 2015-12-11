@@ -146,6 +146,14 @@ def get_fake_collated_cg_snap_info():
     return fake_collated_cg_snap_info
 
 
+def get_fake_access_rule(access_to, access_level, access_type='ip'):
+    return {
+        'access_type': access_type,
+        'access_to': access_to,
+        'access_level': access_level,
+    }
+
+
 @ddt.ddt
 class GenericShareDriverTestCase(test.TestCase):
     """Tests GenericShareDriver."""
@@ -1193,38 +1201,25 @@ class GenericShareDriverTestCase(test.TestCase):
                           self._context, self.share, share_server=self.server)
 
     @ddt.data(const.ACCESS_LEVEL_RW, const.ACCESS_LEVEL_RO)
-    def test_allow_access(self, access_level):
-        access = {
-            'access_type': 'ip',
-            'access_to': 'fake_dest',
-            'access_level': access_level,
-        }
-        self._driver.allow_access(
-            self._context, self.share, access, share_server=self.server)
+    def test_update_access(self, access_level):
+        access_rules = [get_fake_access_rule('1.1.1.1', access_level), ]
+        add_rules = [get_fake_access_rule('2.2.2.2', access_level), ]
+        delete_rules = [get_fake_access_rule('3.3.3.3', access_level), ]
+        self._driver.update_access(self._context, self.share, access_rules,
+                                   add_rules=add_rules,
+                                   delete_rules=delete_rules,
+                                   share_server=self.server)
         self._driver._helpers[self.share['share_proto']].\
-            allow_access.assert_called_once_with(
+            update_access.assert_called_once_with(
                 self.server['backend_details'], self.share['name'],
-                access['access_type'], access['access_level'],
-                access['access_to'])
+                access_rules, add_rules=add_rules, delete_rules=delete_rules)
 
-    def test_allow_access_unsupported(self):
-        access = {
-            'access_type': 'ip',
-            'access_to': 'fake_dest',
-            'access_level': 'fakefoobar',
-        }
-        self.assertRaises(
-            exception.InvalidShareAccessLevel,
-            self._driver.allow_access,
-            self._context, self.share, access, share_server=self.server)
-
-    def test_deny_access(self):
-        access = 'fake_access'
-        self._driver.deny_access(
-            self._context, self.share, access, share_server=self.server)
-        self._driver._helpers[
-            self.share['share_proto']].deny_access.assert_called_once_with(
-                self.server['backend_details'], self.share['name'], access)
+    def test_update_access_add_rules_unsupported_level(self):
+        add_rules = [get_fake_access_rule('1.1.1.1', 'fake-level'), ]
+        self.assertRaises(exception.InvalidShareAccessLevel,
+                          self._driver.update_access, self._context,
+                          self.share, [], add_rules=add_rules,
+                          share_server=self.server)
 
     @ddt.data(fake_share.fake_share(),
               fake_share.fake_share(share_proto='NFSBOGUS'),

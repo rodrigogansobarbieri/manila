@@ -797,23 +797,21 @@ class GenericShareDriver(driver.ExecuteMixin, driver.ShareDriver):
                 share_server['backend_details'], share['name'], recreate=True)
 
     @ensure_server
-    def allow_access(self, context, share, access, share_server=None):
-        """Allow access to the share."""
-
-        # NOTE(vponomaryov): use direct verification for case some additional
-        # level is added.
-        access_level = access['access_level']
-        if access_level not in (const.ACCESS_LEVEL_RW, const.ACCESS_LEVEL_RO):
-            raise exception.InvalidShareAccessLevel(level=access_level)
-        self._get_helper(share).allow_access(
-            share_server['backend_details'], share['name'],
-            access['access_type'], access['access_level'], access['access_to'])
-
-    @ensure_server
-    def deny_access(self, context, share, access, share_server=None):
-        """Deny access to the share."""
-        self._get_helper(share).deny_access(
-            share_server['backend_details'], share['name'], access)
+    def update_access(self, context, share, access_rules, add_rules=None,
+                      delete_rules=None, share_server=None):
+        if add_rules is None:
+            add_rules = []
+        if delete_rules is None:
+            delete_rules = []
+        for access in add_rules:
+            if access['access_level'] not in (const.ACCESS_LEVEL_RW,
+                                              const.ACCESS_LEVEL_RO):
+                raise exception.InvalidShareAccessLevel(
+                    level=access['access_level'])
+        self._get_helper(share).update_access(share_server['backend_details'],
+                                              share['name'], access_rules,
+                                              add_rules=add_rules,
+                                              delete_rules=delete_rules)
 
     def _get_helper(self, share):
         helper = self._helpers.get(share['share_proto'])
