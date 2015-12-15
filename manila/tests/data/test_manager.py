@@ -54,9 +54,9 @@ class DataManagerTestCase(test.TestCase):
         manager = self.manager
         self.assertIsNotNone(manager)
 
-    @ddt.data(constants.STATUS_TASK_STATE_MIGRATION_COPYING_COMPLETING,
-              constants.STATUS_TASK_STATE_MIGRATION_COPYING_STARTING,
-              constants.STATUS_TASK_STATE_MIGRATION_COPYING_IN_PROGRESS)
+    @ddt.data(constants.TASK_STATE_MIGRATION_COPYING_COMPLETING,
+              constants.TASK_STATE_MIGRATION_COPYING_STARTING,
+              constants.TASK_STATE_MIGRATION_COPYING_IN_PROGRESS)
     def test_init_host(self, status):
         fake_share = db_utils.create_share(
             task_state=status)
@@ -68,7 +68,7 @@ class DataManagerTestCase(test.TestCase):
 
         db.share_update.assert_called_with(
             utils.IsAMatcher(context.RequestContext), fake_share['id'],
-            {'task_state': constants.STATUS_TASK_STATE_MIGRATION_ERROR})
+            {'task_state': constants.TASK_STATE_MIGRATION_ERROR})
 
     def _setup_mocks_migrate_share(self):
         fake_share = db_utils.create_share(

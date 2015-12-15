@@ -70,3 +70,8 @@ user documentation.
 ---
   Field 'state' was removed from access_get method.
   Field 'access_rules_status' was added to shares and share instances.
+
+2.10
+----
+  Added Share migration 'cancel_migration', 'get_migration_progress',
+  'complete_migration' methods and notify parameter to 'migrate_share'.

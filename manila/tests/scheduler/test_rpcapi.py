@@ -107,6 +107,7 @@ class SchedulerRpcAPITestCase(test.TestCase):
                                  share_id='share_id',
                                  host='host',
                                  force_host_copy=True,
+                                 notify=True,
                                  request_spec='fake_request_spec',
                                  filter_properties='filter_properties',
                                  version='1.4')

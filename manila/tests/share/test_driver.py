@@ -359,7 +359,8 @@ class ShareDriverTestCase(test.TestCase):
         share_driver = driver.ShareDriver(False)
 
         self.assertEqual((None, None),
-                         share_driver.migrate_share(None, None, None, None))
+                         share_driver.migrate_share(None, None, None,
+                                                    None, None))
 
     def test_get_driver_migration_info_default(self):
 

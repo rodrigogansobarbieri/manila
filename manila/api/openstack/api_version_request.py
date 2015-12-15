@@ -56,6 +56,9 @@ REST_API_VERSION_HISTORY = """
     * 2.8 - Field 'state' was removed from access_get method.
             Field 'access_rules_status' was added to shares and share
             instances.
+    * 2.10 - Added Share migration 'cancel_migration',
+             'get_migration_progress', 'complete_migration' methods and
+             notify parameter to 'migrate_share'.
 
 """
 
@@ -63,7 +66,7 @@ REST_API_VERSION_HISTORY = """
 # The default api version request is defined to be the
 # the minimum version of the API supported.
 _MIN_API_VERSION = "2.0"
-_MAX_API_VERSION = "2.8"
+_MAX_API_VERSION = "2.10"
 DEFAULT_API_VERSION = _MIN_API_VERSION
 
 

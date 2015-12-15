@@ -203,7 +203,7 @@ class ShareManagerTestCase(test.TestCase):
             db_utils.create_share(
                 id='fake_id_4',
                 status=constants.STATUS_AVAILABLE,
-                task_state=constants.STATUS_TASK_STATE_MIGRATION_IN_PROGRESS,
+                task_state=constants.TASK_STATE_MIGRATION_IN_PROGRESS,
                 display_name='fake_name_4').instance,
         ]
         if not setup_access_rules:
@@ -340,7 +340,7 @@ class ShareManagerTestCase(test.TestCase):
                 utils.IsAMatcher(context.RequestContext))
         manager.LOG.info.assert_any_call(
             mock.ANY,
-            {'task': constants.STATUS_TASK_STATE_MIGRATION_IN_PROGRESS,
+            {'task': constants.TASK_STATE_MIGRATION_IN_PROGRESS,
              'id': instances[3]['id']},
         )
         manager.LOG.info.assert_any_call(
@@ -402,7 +402,7 @@ class ShareManagerTestCase(test.TestCase):
                 utils.IsAMatcher(context.RequestContext))
         manager.LOG.info.assert_any_call(
             mock.ANY,
-            {'task': constants.STATUS_TASK_STATE_MIGRATION_IN_PROGRESS,
+            {'task': constants.TASK_STATE_MIGRATION_IN_PROGRESS,
              'id': instances[3]['id']},
         )
         manager.LOG.info.assert_any_call(
@@ -2483,12 +2483,12 @@ class ShareManagerTestCase(test.TestCase):
 
         self.mock_object(data_rpc.DataAPI, 'migrate_share')
 
-        manager.migrate_share(self.context, 'fake_id', host)
+        manager.migrate_share(self.context, 'fake_id', host, False, True)
 
         # asserts
 
         manager.driver.migrate_share.assert_called_once_with(
-            self.context, instance, host, driver_migration_info)
+            self.context, instance, host, driver_migration_info, True)
 
         migration_api.ShareMigrationAPI.create_instance_and_wait.\
             assert_called_once_with(self.context, share, instance, host)
@@ -2521,12 +2521,13 @@ class ShareManagerTestCase(test.TestCase):
         self.mock_object(manager.driver, 'migrate_share',
                          mock.Mock(return_value=(True, 'fake_model_update')))
 
-        manager.migrate_share(self.context, 'fake_id', 'fake_host')
+        manager.migrate_share(self.context, 'fake_id', 'fake_host', False,
+                              True)
 
         # asserts
 
         manager.driver.migrate_share.assert_called_once_with(
-            self.context, instance, host, driver_migration_info)
+            self.context, instance, host, driver_migration_info, True)
 
     def test_migrate_share_generic_migration_exception_1(self):
 
@@ -2560,12 +2561,12 @@ class ShareManagerTestCase(test.TestCase):
 
         self.assertRaises(exception.ShareMigrationFailed,
                           manager.migrate_share, self.context, 'fake_id',
-                          'fake_host')
+                          'fake_host', False, True)
 
         # asserts
 
         manager.driver.migrate_share.assert_called_once_with(
-            self.context, instance, host, driver_migration_info)
+            self.context, instance, host, driver_migration_info, True)
 
         migration_api.ShareMigrationAPI.create_instance_and_wait.\
             assert_called_once_with(self.context, share, instance, host)
@@ -2608,12 +2609,12 @@ class ShareManagerTestCase(test.TestCase):
 
         self.assertRaises(exception.ShareMigrationFailed,
                           manager.migrate_share, self.context, 'fake_id',
-                          'fake_host')
+                          'fake_host', False, True)
 
         # asserts
 
         manager.driver.migrate_share.assert_called_once_with(
-            self.context, instance, host, driver_migration_info)
+            self.context, instance, host, driver_migration_info, True)
 
         migration_api.ShareMigrationAPI.create_instance_and_wait.\
             assert_called_once_with(self.context, share, instance, host)
@@ -2653,12 +2654,12 @@ class ShareManagerTestCase(test.TestCase):
 
         self.assertRaises(exception.ShareMigrationFailed,
                           manager.migrate_share, self.context, 'fake_id',
-                          'fake_host')
+                          'fake_host', False, True)
 
         # asserts
 
         manager.driver.migrate_share.assert_called_once_with(
-            self.context, instance, host, driver_migration_info)
+            self.context, instance, host, driver_migration_info, True)
 
         migration_api.ShareMigrationAPI.create_instance_and_wait.\
             assert_called_once_with(self.context, share, instance, host)
@@ -2674,7 +2675,7 @@ class ShareManagerTestCase(test.TestCase):
         share = db_utils.create_share(
             id='fake_id',
             instances=[instance],
-            task_state=constants.STATUS_TASK_STATE_MIGRATION_COPYING_COMPLETED)
+            task_state=constants.TASK_STATE_MIGRATION_COPYING_COMPLETED)
 
         manager = self.share_manager
 
@@ -2708,7 +2709,7 @@ class ShareManagerTestCase(test.TestCase):
         share = db_utils.create_share(
             id='fake_id',
             instances=[instance],
-            task_state=constants.STATUS_TASK_STATE_MIGRATION_COPYING_COMPLETED)
+            task_state=constants.TASK_STATE_MIGRATION_COPYING_COMPLETED)
 
         manager = self.share_manager
 
@@ -2755,7 +2756,7 @@ class ShareManagerTestCase(test.TestCase):
         instance = db_utils.create_share_instance(
             share_id='fake_id',
             status=constants.STATUS_AVAILABLE,
-            task_state=constants.STATUS_TASK_STATE_MIGRATION_COPYING_STARTING)
+            task_state=constants.TASK_STATE_MIGRATION_COPYING_STARTING)
         share = db_utils.create_share(id='fake_id', instances=[instance])
 
         manager = self.share_manager

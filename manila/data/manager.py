@@ -52,7 +52,7 @@ CONF.register_opts(data_opts)
 class DataManager(manager.Manager):
     """Receives requests to handle data and sends responses."""
 
-    RPC_API_VERSION = '1.0'
+    RPC_API_VERSION = '1.2'
 
     def __init__(self, service_name=None, *args, **kwargs):
         super(DataManager, self).__init__(*args, **kwargs)
@@ -63,12 +63,41 @@ class DataManager(manager.Manager):
         shares = self.db.share_get_all(ctxt)
         for share in shares:
             if share['task_state'] in (
-                    constants.STATUS_TASK_STATE_MIGRATION_COPYING_IN_PROGRESS,
-                    constants.STATUS_TASK_STATE_MIGRATION_COPYING_STARTING,
-                    constants.STATUS_TASK_STATE_MIGRATION_COPYING_COMPLETING):
+                    constants.TASK_STATE_MIGRATION_COPYING_IN_PROGRESS,
+                    constants.TASK_STATE_MIGRATION_COPYING_STARTING,
+                    constants.TASK_STATE_MIGRATION_COPYING_COMPLETING):
                 self.db.share_update(ctxt, share['id'], {
-                    'task_state': constants.STATUS_TASK_STATE_MIGRATION_ERROR
+                    'task_state': constants.TASK_STATE_MIGRATION_ERROR
                 })
+
+    def cancel_migration(self, context, share_id):
+        LOG.info(_LI("Received request to cancel share migration "
+                     "of share %s.") % share_id)
+        copy = self.busy_tasks_shares.get(share_id)
+        if copy:
+            copy.cancel()
+        else:
+            msg = _("Data copy for migration of share %s cannot be cancelled"
+                    " at this moment.") % share_id
+            LOG.error(msg)
+            raise exception.InvalidShare(reason=msg)
+
+    def get_migration_progress(self, context, share_id):
+        LOG.info(_LI("Received request to get share migration information "
+                     "of share %s.") % share_id)
+        copy = self.busy_tasks_shares.get(share_id)
+        if copy:
+            result = copy.get_progress()
+            LOG.info(_LI("Obtained following share migration information "
+                         "of share %(share)s: %(info)s.") % {
+                'share': share_id,
+                'info': six.text_type(result)})
+            return result
+        else:
+            msg = _("Migration of share %s data copy progress cannot be "
+                    "obtained at this moment.") % share_id
+            LOG.error(msg)
+            raise exception.InvalidShare(reason=msg)
 
     def migrate_share(self, context, saved_rules, ignore_list, share_id,
                       share_instance_id, new_share_instance_id,
@@ -82,7 +111,7 @@ class DataManager(manager.Manager):
 
         self.db.share_update(context, share_id, {
             'task_state':
-                constants.STATUS_TASK_STATE_MIGRATION_COPYING_STARTING
+                constants.TASK_STATE_MIGRATION_COPYING_STARTING
         })
 
         share_ref = self.db.share_get(context, share_id)
@@ -114,7 +143,7 @@ class DataManager(manager.Manager):
 
         self.db.share_update(context, share_id, {
             'task_state':
-                constants.STATUS_TASK_STATE_MIGRATION_COPYING_COMPLETED
+                constants.TASK_STATE_MIGRATION_COPYING_COMPLETED
         })
 
         self.busy_tasks_shares.pop(share_id)
@@ -229,16 +258,24 @@ class DataManager(manager.Manager):
 
             self.db.share_update(context, share['id'], {
                 'task_state':
-                    constants.STATUS_TASK_STATE_MIGRATION_COPYING_IN_PROGRESS
+                    constants.TASK_STATE_MIGRATION_COPYING_IN_PROGRESS
             })
 
             copy.run()
 
-            self.db.share_update(
-                context, share['id'],
-                {'task_state':
-                    constants.STATUS_TASK_STATE_MIGRATION_COPYING_COMPLETING
-                 })
+            if copy.cancelled:
+                self.db.share_update(context, share['id'], {
+                    'task_state':
+                        constants.TASK_STATE_MIGRATION_CANCELLED
+                })
+                LOG.info(_LI("Share migration of share %s"
+                             " cancelled.") % share['id'])
+            else:
+                self.db.share_update(
+                    context, share['id'],
+                    {'task_state':
+                        constants.TASK_STATE_MIGRATION_COPYING_COMPLETING
+                     })
 
             if copy.get_progress()['total_progress'] == 100:
                 migrated = True

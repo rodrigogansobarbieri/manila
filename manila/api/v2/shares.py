@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from manila.api.openstack import api_version_request as api_version
 from manila.api.openstack import wsgi
 from manila.api.v1 import share_manage
 from manila.api.v1 import share_unmanage
@@ -74,7 +75,32 @@ class ShareController(shares.ShareMixin,
     @wsgi.Controller.api_version('2.7', experimental=True)
     @wsgi.action("migrate_share")
     def migrate_share(self, req, id, body):
-        return self._migrate_share(req, id, body)
+        version = req.environ.get('HTTP_X_OPENSTACK_MANILA_API_VERSION')
+        if api_version.APIVersionRequest(version) < (
+                api_version.APIVersionRequest("2.10")):
+            return self._migrate_share(req, id, body, do_notify=False)
+        else:
+            return self._migrate_share(req, id, body, do_notify=True)
+
+    @wsgi.Controller.api_version('2.10', experimental=True)
+    @wsgi.action("complete_migration")
+    def complete_migration(self, req, id, body):
+        return self._complete_migration(req, id, body)
+
+    @wsgi.Controller.api_version('2.10', experimental=True)
+    @wsgi.action("cancel_migration")
+    def cancel_migration(self, req, id, body):
+        return self._cancel_migration(req, id, body)
+
+    @wsgi.Controller.api_version('2.10', experimental=True)
+    @wsgi.action("get_migration_progress")
+    def get_migration_progress(self, req, id, body):
+        return self._get_migration_progress(req, id, body)
+
+    @wsgi.Controller.api_version('2.10', experimental=True)
+    @wsgi.action("reset_task_state")
+    def reset_task_state(self, req, id, body):
+        return self._reset_task_state(req, id, body)
 
     @wsgi.Controller.api_version('2.0', '2.6')
     @wsgi.action('os-allow_access')

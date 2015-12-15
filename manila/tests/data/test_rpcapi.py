@@ -84,7 +84,7 @@ class DataRpcAPITestCase(test.TestCase):
     def test_migrate_share(self):
         self._test_data_api('migrate_share',
                             rpc_method='cast',
-                            version='1.0',
+                            version='1.1',
                             share_id=self.fake_share['id'],
                             saved_rules=[],
                             ignore_list=[],

@@ -833,7 +833,7 @@ class ShareAPITestCase(test.TestCase):
             status=constants.STATUS_AVAILABLE,
             user_id=self.context.user_id,
             project_id=self.context.project_id,
-            task_state=constants.STATUS_TASK_STATE_MIGRATION_IN_PROGRESS)
+            task_state=constants.TASK_STATE_MIGRATION_IN_PROGRESS)
 
         self.assertRaises(exception.ShareBusyException, self.api.unmanage,
                           self.context, share)
@@ -944,7 +944,7 @@ class ShareAPITestCase(test.TestCase):
     def test_create_snapshot_invalid_task_state(self):
         share = db_utils.create_share(
             status=constants.STATUS_AVAILABLE,
-            task_state=constants.STATUS_TASK_STATE_MIGRATION_IN_PROGRESS)
+            task_state=constants.TASK_STATE_MIGRATION_IN_PROGRESS)
         self.assertRaises(exception.ShareBusyException,
                           self.api.create_snapshot,
                           self.context,
@@ -1092,7 +1092,7 @@ class ShareAPITestCase(test.TestCase):
     def test_delete_share_invalid_task_state(self):
         share = db_utils.create_share(
             status=constants.STATUS_AVAILABLE,
-            task_state=constants.STATUS_TASK_STATE_MIGRATION_IN_PROGRESS)
+            task_state=constants.TASK_STATE_MIGRATION_IN_PROGRESS)
 
         self.assertRaises(exception.ShareBusyException,
                           self.api.delete,
@@ -1503,7 +1503,7 @@ class ShareAPITestCase(test.TestCase):
     def test_extend_invalid_task_state(self):
         share = db_utils.create_share(
             status=constants.STATUS_AVAILABLE,
-            task_state=constants.STATUS_TASK_STATE_MIGRATION_IN_PROGRESS)
+            task_state=constants.TASK_STATE_MIGRATION_IN_PROGRESS)
         new_size = 123
 
         self.assertRaises(exception.ShareBusyException,
@@ -1554,7 +1554,7 @@ class ShareAPITestCase(test.TestCase):
     def test_shrink_invalid_task_state(self):
         share = db_utils.create_share(
             status=constants.STATUS_AVAILABLE,
-            task_state=constants.STATUS_TASK_STATE_MIGRATION_IN_PROGRESS)
+            task_state=constants.TASK_STATE_MIGRATION_IN_PROGRESS)
 
         self.assertRaises(exception.ShareBusyException,
                           self.api.shrink, self.context, share, 123)
@@ -1598,10 +1598,10 @@ class ShareAPITestCase(test.TestCase):
                          mock.Mock(return_value='fake_type'))
         self.mock_object(utils, 'validate_service_host')
 
-        self.api.migrate_share(self.context, share, host, True)
+        self.api.migrate_share(self.context, share, host, True, True)
 
         self.scheduler_rpcapi.migrate_share_to_host.assert_called_once_with(
-            self.context, share['id'], host, True, request_spec)
+            self.context, share['id'], host, True, True, request_spec)
 
     def test_migrate_share_status_unavailable(self):
         host = 'fake2@backend#pool'
@@ -1609,16 +1609,16 @@ class ShareAPITestCase(test.TestCase):
             status=constants.STATUS_ERROR)
 
         self.assertRaises(exception.InvalidShare, self.api.migrate_share,
-                          self.context, share, host, True)
+                          self.context, share, host, True, True)
 
     def test_migrate_share_task_state_invalid(self):
         host = 'fake2@backend#pool'
         share = db_utils.create_share(
             status=constants.STATUS_AVAILABLE,
-            task_state=constants.STATUS_TASK_STATE_MIGRATION_IN_PROGRESS)
+            task_state=constants.TASK_STATE_MIGRATION_IN_PROGRESS)
 
         self.assertRaises(exception.ShareBusyException, self.api.migrate_share,
-                          self.context, share, host, True)
+                          self.context, share, host, True, True)
 
     def test_migrate_share_with_snapshots(self):
         host = 'fake2@backend#pool'
@@ -1628,7 +1628,7 @@ class ShareAPITestCase(test.TestCase):
                          mock.Mock(return_value=True))
 
         self.assertRaises(exception.InvalidShare, self.api.migrate_share,
-                          self.context, share, host, True)
+                          self.context, share, host, True, True)
 
     def test_migrate_share_invalid_host(self):
         host = 'fake@backend#pool'
@@ -1640,7 +1640,7 @@ class ShareAPITestCase(test.TestCase):
 
         self.assertRaises(exception.ServiceNotFound,
                           self.api.migrate_share,
-                          self.context, share, host, True)
+                          self.context, share, host, True, True)
 
     def test_migrate_share_same_host(self):
         host = 'fake@backend#pool'
@@ -1649,7 +1649,7 @@ class ShareAPITestCase(test.TestCase):
 
         self.assertRaises(exception.InvalidHost,
                           self.api.migrate_share,
-                          self.context, share, host, True)
+                          self.context, share, host, True, True)
 
     def test_migrate_share_exception(self):
         host = 'fake2@backend#pool'
@@ -1666,7 +1666,7 @@ class ShareAPITestCase(test.TestCase):
 
         self.assertRaises(exception.ShareMigrationFailed,
                           self.api.migrate_share,
-                          self.context, share, host, True)
+                          self.context, share, host, True, True)
 
         db_api.share_update.assert_any_call(
             mock.ANY, share['id'], mock.ANY)

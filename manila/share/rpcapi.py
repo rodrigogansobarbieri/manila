@@ -91,13 +91,13 @@ class ShareAPI(object):
         cctxt.cast(ctxt, 'delete_share_instance',
                    share_instance_id=share_instance['id'])
 
-    def migrate_share(self, ctxt, share, dest_host, force_host_copy):
+    def migrate_share(self, ctxt, share, dest_host, force_host_copy, notify):
         new_host = utils.extract_host(share['host'])
         cctxt = self.client.prepare(server=new_host, version='1.6')
         host_p = {'host': dest_host.host,
                   'capabilities': dest_host.capabilities}
         cctxt.cast(ctxt, 'migrate_share', share_id=share['id'],
-                   host=host_p, force_host_copy=force_host_copy)
+                   host=host_p, force_host_copy=force_host_copy, notify=notify)
 
     def get_migration_info(self, ctxt, share_instance, share_server):
         new_host = utils.extract_host(share_instance['host'])

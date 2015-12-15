@@ -258,7 +258,7 @@ class ShareDriver(object):
                  'allowed': driver_handles_share_servers})
 
     def migrate_share(self, context, share_ref, host,
-                      dest_driver_migration_info):
+                      dest_driver_migration_info, notify):
         """Is called to perform driver migration.
 
         Driver should implement this method if willing to perform migration
@@ -269,10 +269,28 @@ class ShareDriver(object):
         :param host: Destination host and its capabilities.
         :param dest_driver_migration_info: Migration information provided by
         destination host.
+        :param notify: whether the migration should complete or wait for
+        2nd phase call.
         :returns: Boolean value indicating if driver migration succeeded.
         :returns: Dictionary containing a model update.
         """
         return None, None
+
+    def complete_migration(self, context, share_ref, host,
+                           dest_driver_migration_info):
+        """Is called to perform driver migration.
+
+        Driver should implement this method if willing to perform migration
+        in an optimized way, useful for when driver understands destination
+        backend.
+        :param context: The 'context.RequestContext' object for the request.
+        :param share_ref: Reference to the share being migrated.
+        :param host: Destination host and its capabilities.
+        :param dest_driver_migration_info: Migration information provided by
+        destination host.
+        :returns: Dictionary containing a model update.
+        """
+        return None
 
     def get_driver_migration_info(self, context, share_instance, share_server):
         """Is called to provide necessary driver migration logic."""
