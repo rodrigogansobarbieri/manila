@@ -144,9 +144,11 @@ CONFIGURE_BACKING_FILE=${CONFIGURE_BACKING_FILE:-"True"}
 # Enable manila services
 # ----------------------
 # We have to add Manila to enabled services for screen_it to work
-# It consists of 3 parts: m-api (API), m-shr (Share) and m-sch (Scheduler).
+# It consists of 4 parts: m-api (API), m-shr (Share), m-sch (Scheduler)
+# and m-dat (Data).
 
 enable_service manila
 enable_service m-api
 enable_service m-shr
 enable_service m-sch
+enable_service m-dat
