@@ -313,29 +313,6 @@ class GenericShareDriverTestCase(test.TestCase):
         self.assertRaises(exception.ManilaException,
                           self._driver._setup_helpers)
 
-    def test__get_access_rule_for_data_copy_dhss_true(self):
-        get_access_return = {
-            'access_level': 'rw',
-            'access_to': 'fake_ip',
-            'access_type': 'ip'
-        }
-
-        result = self._driver._get_access_rule_for_data_copy(
-            self._context, self.share, self.server)
-        self.assertEqual(get_access_return, result)
-
-    def test__get_access_rule_for_data_copy_dhss_false(self):
-        get_access_return = {
-            'access_level': 'rw',
-            'access_to': 'fake_ip',
-            'access_type': 'ip'
-        }
-        CONF.set_default('driver_handles_share_servers', False)
-        CONF.set_default('migration_data_copy_node_ip', 'fake_ip')
-        result = self._driver._get_access_rule_for_data_copy(
-            self._context, self.share, self.server)
-        self.assertEqual(get_access_return, result)
-
     def test_create_share(self):
         volume = 'fake_volume'
         volume2 = 'fake_volume2'

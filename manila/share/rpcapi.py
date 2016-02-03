@@ -46,6 +46,7 @@ class ShareAPI(object):
             get_migration_info()
             get_driver_migration_info()
         1.7 - Update target call API in allow/deny access methods
+        1.8 - Add migration_complete()
     """
 
     BASE_RPC_API_VERSION = '1.0'
@@ -54,7 +55,7 @@ class ShareAPI(object):
         super(ShareAPI, self).__init__()
         target = messaging.Target(topic=CONF.share_topic,
                                   version=self.BASE_RPC_API_VERSION)
-        self.client = rpc.get_client(target, version_cap='1.7')
+        self.client = rpc.get_client(target, version_cap='1.8')
 
     def create_share_instance(self, ctxt, share_instance, host,
                               request_spec, filter_properties,
@@ -90,13 +91,13 @@ class ShareAPI(object):
         cctxt.cast(ctxt, 'delete_share_instance',
                    share_instance_id=share_instance['id'])
 
-    def migrate_share(self, ctxt, share, dest_host, force_host_copy):
+    def migrate_share(self, ctxt, share, dest_host, force_host_copy, notify):
         new_host = utils.extract_host(share['host'])
         cctxt = self.client.prepare(server=new_host, version='1.6')
         host_p = {'host': dest_host.host,
                   'capabilities': dest_host.capabilities}
         cctxt.cast(ctxt, 'migrate_share', share_id=share['id'],
-                   host=host_p, force_host_copy=force_host_copy)
+                   host=host_p, force_host_copy=force_host_copy, notify=notify)
 
     def get_migration_info(self, ctxt, share_instance, share_server):
         new_host = utils.extract_host(share_instance['host'])
@@ -200,3 +201,13 @@ class ShareAPI(object):
             ctxt,
             'delete_cgsnapshot',
             cgsnapshot_id=cgsnapshot['id'])
+
+    def migration_complete(self, ctxt, share, share_instance_id,
+                           new_share_instance_id, error):
+        new_host = utils.extract_host(share['host'])
+        cctxt = self.client.prepare(server=new_host, version='1.8')
+        cctxt.cast(ctxt, 'migration_complete',
+                   share_id=share['id'],
+                   share_instance_id=share_instance_id,
+                   new_share_instance_id=new_share_instance_id,
+                   error=error)

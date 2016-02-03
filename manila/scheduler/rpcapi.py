@@ -87,7 +87,7 @@ class SchedulerAPI(object):
         )
 
     def migrate_share_to_host(self, ctxt, share_id, host,
-                              force_host_copy=False, request_spec=None,
+                              force_host_copy, notify, request_spec=None,
                               filter_properties=None):
 
         cctxt = self.client.prepare(version='1.4')
@@ -96,5 +96,6 @@ class SchedulerAPI(object):
                           share_id=share_id,
                           host=host,
                           force_host_copy=force_host_copy,
+                          notify=notify,
                           request_spec=request_spec_p,
                           filter_properties=filter_properties)

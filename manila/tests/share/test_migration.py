@@ -23,11 +23,10 @@ from manila import context
 from manila import db
 from manila import exception
 from manila.share import api as share_api
-from manila.share import driver
 from manila.share import migration
 from manila import test
 from manila.tests import db_utils
-from manila import utils
+from manila import utils as migration_utils
 
 
 @ddt.ddt
@@ -39,49 +38,7 @@ class ShareMigrationHelperTestCase(test.TestCase):
         self.share = db_utils.create_share()
         self.context = context.get_admin_context()
         self.helper = migration.ShareMigrationHelper(
-            self.context, db,
-            driver.CONF.migration_create_delete_share_timeout,
-            driver.CONF.migration_wait_access_rules_timeout, self.share)
-
-    def test_deny_rules_and_wait(self):
-        saved_rules = [db_utils.create_access(share_id=self.share['id'])]
-
-        fake_share_instances = [
-            {"id": "1", "access_rules_status": constants.STATUS_OUT_OF_SYNC},
-            {"id": "1", "access_rules_status": constants.STATUS_ACTIVE},
-        ]
-
-        self.mock_object(share_api.API, 'deny_access_to_instance')
-        self.mock_object(db, 'share_instance_get',
-                         mock.Mock(side_effect=fake_share_instances))
-        self.mock_object(time, 'sleep')
-
-        self.helper.deny_rules_and_wait(
-            self.context, self.share, saved_rules)
-
-        db.share_instance_get.assert_any_call(
-            self.context, self.share.instance['id'])
-
-    def test_add_rules_and_wait(self):
-
-        fake_access_rules = [
-            {'access_type': 'fake', 'access_level': 'ro', 'access_to': 'fake'},
-            {'access_type': 'f0ke', 'access_level': 'rw', 'access_to': 'f0ke'},
-        ]
-
-        self.mock_object(share_api.API, 'allow_access_to_instance')
-        self.mock_object(self.helper, 'wait_for_access_update')
-        self.mock_object(db, 'share_access_create')
-
-        self.helper.add_rules_and_wait(self.context, self.share,
-                                       fake_access_rules)
-
-        share_api.API.allow_access_to_instance.assert_called_once_with(
-            self.context, self.share.instance, mock.ANY
-        )
-        self.helper.wait_for_access_update.assert_called_once_with(
-            self.share.instance
-        )
+            self.context, db, self.share)
 
     def test_delete_instance_and_wait(self):
 
@@ -90,8 +47,7 @@ class ShareMigrationHelperTestCase(test.TestCase):
                          mock.Mock(side_effect=[self.share.instance, None]))
         self.mock_object(time, 'sleep')
 
-        self.helper.delete_instance_and_wait(self.context,
-                                             self.share.instance)
+        self.helper.delete_instance_and_wait(self.context, self.share.instance)
 
         db.share_instance_get.assert_any_call(
             self.context, self.share.instance['id'])
@@ -163,6 +119,7 @@ class ShareMigrationHelperTestCase(test.TestCase):
 
         self.mock_object(share_api.API, 'create_instance',
                          mock.Mock(return_value=share_instance_error))
+        self.mock_object(self.helper, 'delete_instance_and_wait')
         self.mock_object(db, 'share_instance_get',
                          mock.Mock(return_value=share_instance_error))
         self.mock_object(time, 'sleep')
@@ -171,7 +128,7 @@ class ShareMigrationHelperTestCase(test.TestCase):
                           self.helper.create_instance_and_wait,
                           self.context, self.share, share_instance_error, host)
 
-        db.share_instance_get.assert_called_once_with(
+        db.share_instance_get.assert_called_with(
             self.context, share_instance_error['id'], with_share_data=True)
 
     def test_create_instance_and_wait_timeout(self):
@@ -184,6 +141,9 @@ class ShareMigrationHelperTestCase(test.TestCase):
 
         self.mock_object(share_api.API, 'create_instance',
                          mock.Mock(return_value=share_instance_creating))
+
+        self.mock_object(self.helper, 'delete_instance_and_wait')
+
         self.mock_object(db, 'share_instance_get',
                          mock.Mock(return_value=share_instance_creating))
         self.mock_object(time, 'sleep')
@@ -191,230 +151,114 @@ class ShareMigrationHelperTestCase(test.TestCase):
         now = time.time()
         timeout = now + 310
 
-        self.mock_object(time, 'time',
-                         mock.Mock(side_effect=[now, timeout]))
+        self.mock_object(time, 'time', mock.Mock(side_effect=[now, timeout]))
 
         self.assertRaises(exception.ShareMigrationFailed,
-                          self.helper.create_instance_and_wait,
-                          self.context, self.share, share_instance_creating,
-                          host)
+                          self.helper.create_instance_and_wait, self.context,
+                          self.share, share_instance_creating, host)
 
-        db.share_instance_get.assert_called_once_with(
+        db.share_instance_get.assert_called_with(
             self.context, share_instance_creating['id'], with_share_data=True)
 
-    def test_wait_for_access_update(self):
-        sid = 1
-        fake_share_instances = [
-            {'id': sid, 'access_rules_status': constants.STATUS_OUT_OF_SYNC},
-            {'id': sid, 'access_rules_status': constants.STATUS_ACTIVE},
-        ]
+    def test_change_to_read_only_with_ro_support(self):
 
-        self.mock_object(time, 'sleep')
-        self.mock_object(db, 'share_instance_get',
-                         mock.Mock(side_effect=fake_share_instances))
+        share_instance = db_utils.create_share_instance(
+            share_id=self.share['id'], status=constants.STATUS_AVAILABLE)
 
-        self.helper.wait_for_access_update(fake_share_instances[0])
+        access = db_utils.create_access(share_id=self.share['id'],
+                                        access_to='fake_ip',
+                                        access_level='rw')
 
-        db.share_instance_get.assert_has_calls(
-            [mock.call(mock.ANY, sid), mock.call(mock.ANY, sid)]
-        )
-        time.sleep.assert_called_once_with(1)
+        server = db_utils.create_share_server(share_id=self.share['id'])
 
-    @ddt.data(
-        (
-            {'id': '1', 'access_rules_status': constants.STATUS_ERROR},
-            exception.ShareMigrationFailed
-        ),
-        (
-            {'id': '1', 'access_rules_status': constants.STATUS_OUT_OF_SYNC},
-            exception.ShareMigrationFailed
-        ),
-    )
-    @ddt.unpack
-    def test_wait_for_access_update_invalid(self, fake_instance, expected_exc):
-        self.mock_object(time, 'sleep')
-        self.mock_object(db, 'share_instance_get',
-                         mock.Mock(return_value=fake_instance))
+        share_driver = mock.Mock()
+        self.mock_object(share_driver, 'update_access')
 
-        now = time.time()
-        timeout = now + 100
+        self.mock_object(db, 'share_access_get_all_for_instance',
+                         mock.Mock(return_value=[access]))
 
-        self.mock_object(time, 'time',
-                         mock.Mock(side_effect=[now, timeout]))
+        self.helper.change_to_read_only(share_instance, server, True,
+                                        share_driver)
 
-        self.assertRaises(expected_exc,
-                          self.helper.wait_for_access_update, fake_instance)
+        db.share_access_get_all_for_instance.assert_called_once_with(
+            self.context, share_instance['id'])
+        share_driver.update_access.assert_called_once_with(
+            self.context, share_instance, [access], add_rules=[],
+            delete_rules=[], share_server=server)
 
-    def test_allow_migration_access(self):
-        access = {'access_to': 'fake_ip',
-                  'access_type': 'fake_type'}
+    def test_change_to_read_only_without_ro_support(self):
 
-        access_active = db_utils.create_access(share_id=self.share['id'])
+        share_instance = db_utils.create_share_instance(
+            share_id=self.share['id'], status=constants.STATUS_AVAILABLE)
 
-        self.mock_object(self.helper, 'wait_for_access_update',
-                         mock.Mock(return_value=access_active))
+        access = db_utils.create_access(share_id=self.share['id'],
+                                        access_to='fake_ip',
+                                        access_level='rw')
 
-        self.mock_object(self.helper.api, 'allow_access',
-                         mock.Mock(return_value=access_active))
+        server = db_utils.create_share_server(share_id=self.share['id'])
 
-        result = self.helper.allow_migration_access(access)
+        share_driver = mock.Mock()
+        self.mock_object(share_driver, 'update_access')
 
-        self.assertEqual(access_active, result)
+        self.mock_object(db, 'share_access_get_all_for_instance',
+                         mock.Mock(return_value=[access]))
 
-        self.helper.wait_for_access_update.assert_called_once_with(
-            self.share.instance)
+        self.helper.change_to_read_only(share_instance, server, False,
+                                        share_driver)
 
-    def test_allow_migration_access_exists(self):
-        access = {'access_to': 'fake_ip',
-                  'access_type': 'fake_type'}
-
-        access_active = db_utils.create_access(share_id=self.share['id'],
-                                               access_to='fake_ip')
-
-        self.mock_object(
-            self.helper.api, 'allow_access',
-            mock.Mock(side_effect=[exception.ShareAccessExists('fake')]))
-
-        self.mock_object(self.helper.api, 'access_get_all',
-                         mock.Mock(return_value=[access_active]))
-
-        result = self.helper.allow_migration_access(access)
-
-        self.assertEqual(access_active, result)
-
-    def test_deny_migration_access(self):
-
-        access = {'access_to': 'fake_ip',
-                  'access_type': 'fake_type'}
-
-        access_active = db_utils.create_access(share_id=self.share['id'],
-                                               access_to='fake_ip')
-
-        self.mock_object(self.helper.api, 'access_get',
-                         mock.Mock(return_value=access_active))
-
-        self.mock_object(self.helper.api, 'deny_access')
-
-        self.mock_object(self.helper, 'wait_for_access_update')
-
-        self.helper.deny_migration_access(access_active, access)
-
-        self.helper.wait_for_access_update.assert_called_once_with(
-            self.share.instance
-        )
-
-    def test_deny_migration_access_not_found(self):
-
-        access = {'access_to': 'fake_ip',
-                  'access_type': 'fake_type'}
-
-        access_active = db_utils.create_access(share_id=self.share['id'],
-                                               access_to='fake_ip')
-
-        self.mock_object(self.helper.api, 'access_get',
-                         mock.Mock(side_effect=exception.NotFound('fake')))
-
-        self.helper.deny_migration_access(access_active, access)
-
-    def test_deny_migration_access_none(self):
-
-        access = {'access_to': 'fake_ip',
-                  'access_type': 'fake_type'}
-
-        access_active = db_utils.create_access(share_id=self.share['id'],
-                                               access_to='fake_ip')
-
-        self.mock_object(self.helper.api, 'access_get_all',
-                         mock.Mock(return_value=[access_active]))
-
-        self.mock_object(self.helper.api, 'deny_access')
-
-        self.mock_object(self.helper, 'wait_for_access_update')
-
-        self.helper.deny_migration_access(None, access)
-
-        self.helper.wait_for_access_update.assert_called_once_with(
-            self.share.instance)
-
-    def test_deny_migration_access_exception(self):
-
-        access = {'access_to': 'fake_ip',
-                  'access_type': 'fake_type'}
-
-        access_active = db_utils.create_access(share_id=self.share['id'],
-                                               access_to='fake_ip')
-
-        self.mock_object(self.helper.api, 'access_get',
-                         mock.Mock(return_value=access_active))
-
-        self.mock_object(self.helper.api, 'deny_access',
-                         mock.Mock(side_effect=[exception.NotFound('fake')]))
-
-        self.assertRaises(exception.NotFound,
-                          self.helper.deny_migration_access, access_active,
-                          access)
-
-    def test_cleanup_migration_access_exception(self):
-
-        self.mock_object(self.helper, 'deny_migration_access',
-                         mock.Mock(side_effect=Exception('fake')))
-
-        self.helper.cleanup_migration_access(None, None)
-
-    def test_cleanup_temp_folder_exception(self):
-
-        self.mock_object(utils, 'execute',
-                         mock.Mock(side_effect=Exception('fake')))
-
-        self.helper.cleanup_temp_folder(self.share.instance, None)
-
-    def test_cleanup_unmount_temp_folder_exception(self):
-
-        self.mock_object(utils, 'execute',
-                         mock.Mock(side_effect=Exception('fake')))
-
-        self.helper.cleanup_unmount_temp_folder(self.share.instance, None)
-
-    def test_change_to_read_only(self):
-
-        access_active = db_utils.create_access(share_id=self.share['id'],
-                                               access_to='fake_ip')
-
-        self.mock_object(db, 'share_access_get_all_for_share',
-                         mock.Mock(return_value=access_active))
-
-        self.mock_object(self.helper, 'deny_rules_and_wait')
-        self.mock_object(self.helper, 'add_rules_and_wait')
-
-        result = self.helper.change_to_read_only(True)
-
-        self.assertEqual(access_active, result)
-
-        db.share_access_get_all_for_share.assert_called_once_with(
-            self.context, self.share['id'])
-
-        self.helper.deny_rules_and_wait.assert_called_once_with(
-            self.context, self.share, access_active)
-        self.helper.add_rules_and_wait.assert_called_once_with(
-            self.context, self.share, access_active, 'ro')
+        db.share_access_get_all_for_instance.assert_called_once_with(
+            self.context, share_instance['id'])
+        share_driver.update_access.assert_called_once_with(
+            self.context, share_instance, [], add_rules=[],
+            delete_rules=[access], share_server=server)
 
     def test_revert_access_rules(self):
 
-        access_active = db_utils.create_access(share_id=self.share['id'],
-                                               access_to='fake_ip')
+        share_instance = db_utils.create_share_instance(
+            share_id=self.share['id'], status=constants.STATUS_AVAILABLE)
 
-        self.mock_object(db, 'share_access_get_all_for_share',
-                         mock.Mock(return_value=access_active))
+        access = db_utils.create_access(share_id=self.share['id'],
+                                        access_to='fake_ip',
+                                        access_level='rw')
 
-        self.mock_object(self.helper, 'deny_rules_and_wait')
-        self.mock_object(self.helper, 'add_rules_and_wait')
+        server = db_utils.create_share_server(share_id=self.share['id'])
 
-        self.helper.revert_access_rules(True, access_active)
+        share_driver = mock.Mock()
+        self.mock_object(share_driver, 'update_access')
 
-        db.share_access_get_all_for_share.assert_called_once_with(
-            self.context, self.share['id'])
+        self.mock_object(db, 'share_access_get_all_for_instance',
+                         mock.Mock(return_value=[access]))
 
-        self.helper.deny_rules_and_wait.assert_called_once_with(
-            self.context, self.share, access_active)
-        self.helper.add_rules_and_wait.assert_called_once_with(
-            self.context, self.share, access_active)
+        self.helper.revert_access_rules(share_instance, server, share_driver)
+
+        db.share_access_get_all_for_instance.assert_called_once_with(
+            self.context, share_instance['id'])
+        share_driver.update_access.assert_called_once_with(
+            self.context, share_instance, [access], add_rules=[],
+            delete_rules=[], share_server=server)
+
+    def test_apply_new_access_rules(self):
+
+        share_instance = db_utils.create_share_instance(
+            share_id=self.share['id'], status=constants.STATUS_AVAILABLE)
+        new_share_instance = db_utils.create_share_instance(
+            share_id=self.share['id'], status=constants.STATUS_AVAILABLE,
+            access_rules_status='active')
+
+        access = db_utils.create_access(share_id=self.share['id'],
+                                        access_to='fake_ip',
+                                        access_level='rw')
+
+        self.mock_object(db, 'share_access_get_all_for_instance',
+                         mock.Mock(return_value=[access]))
+        self.mock_object(db, 'share_instance_get', mock.Mock(
+            return_value=new_share_instance))
+        self.mock_object(share_api.API, 'allow_access_to_instance')
+        self.mock_object(migration_utils, 'wait_for_access_update')
+
+        self.helper.apply_new_access_rules(share_instance, new_share_instance)
+
+        db.share_access_get_all_for_instance.assert_called_once_with(
+            self.context, share_instance['id'])
+        share_api.API.allow_access_to_instance.assert_called_once_with(
+            self.context, new_share_instance, [access])

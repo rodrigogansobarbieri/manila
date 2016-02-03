@@ -232,6 +232,10 @@ class ShareMigrationFailed(ManilaException):
     message = _("Share migration failed: %(reason)s")
 
 
+class ShareMigrationCancelled(ManilaException):
+    message = _("Share migration for share: %(share_id)s was cancelled.")
+
+
 class ServiceIPNotFound(ManilaException):
     message = _("Share migration failed: %(reason)s")
 

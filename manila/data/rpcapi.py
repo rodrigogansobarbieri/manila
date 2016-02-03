@@ -30,6 +30,10 @@ class DataAPI(object):
     API version history:
 
         1.0 - Initial version.
+        1.1 - Add migrate_share(),
+              migration_cancel(),
+              migration_get_progress()
+
     """
 
     BASE_RPC_API_VERSION = '1.0'
@@ -38,4 +42,27 @@ class DataAPI(object):
         super(DataAPI, self).__init__()
         target = messaging.Target(topic=CONF.data_topic,
                                   version=self.BASE_RPC_API_VERSION)
-        self.client = rpc.get_client(target, version_cap='1.0')
+        self.client = rpc.get_client(target, version_cap='1.1')
+
+    def migrate_share(self, ctxt, share_id, ignore_list, share_instance_id,
+                      new_share_instance_id, migration_info_src,
+                      migration_info_dest, notify):
+        cctxt = self.client.prepare(version='1.1')
+        cctxt.cast(
+            ctxt,
+            'migrate_share',
+            share_id=share_id,
+            ignore_list=ignore_list,
+            share_instance_id=share_instance_id,
+            new_share_instance_id=new_share_instance_id,
+            migration_info_src=migration_info_src,
+            migration_info_dest=migration_info_dest,
+            notify=notify)
+
+    def migration_cancel(self, ctxt, share_id):
+        cctxt = self.client.prepare(version='1.1')
+        cctxt.call(ctxt, 'migration_cancel', share_id=share_id)
+
+    def migration_get_progress(self, ctxt, share_id):
+        cctxt = self.client.prepare(version='1.1')
+        return cctxt.call(ctxt, 'migration_get_progress', share_id=share_id)

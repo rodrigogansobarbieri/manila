@@ -245,7 +245,9 @@ class Share(BASE, ManilaBase):
         result = None
         if len(self.instances) > 0:
             for instance in self.instances:
-                if instance.status == constants.STATUS_AVAILABLE:
+                if instance.status in constants.PRIORITY_STATUSES:
+                    return instance
+                elif instance.status == constants.STATUS_AVAILABLE:
                     return instance
                 elif instance.status not in constants.TRANSITIONAL_STATUSES:
                     result = instance

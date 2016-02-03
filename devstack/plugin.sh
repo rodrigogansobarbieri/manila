@@ -259,23 +259,27 @@ function create_service_share_servers {
         driver_handles_share_servers=$(iniget $MANILA_CONF $BE driver_handles_share_servers)
         share_driver=$(iniget $MANILA_CONF $BE share_driver)
         generic_driver='manila.share.drivers.generic.GenericShareDriver'
-        if [[ $(trueorfalse False driver_handles_share_servers) == False && $share_driver == $generic_driver ]]; then
-            vm_name='manila_service_share_server_'$BE
-            nova boot $vm_name \
-                --flavor $MANILA_SERVICE_VM_FLAVOR_NAME \
-                --image $MANILA_SERVICE_IMAGE_NAME \
-                --nic net-id=$private_net_id \
-                --security-groups $MANILA_SERVICE_SECGROUP \
-                --key-name $MANILA_SERVICE_KEYPAIR_NAME
+        if [[ $share_driver == $generic_driver ]]; then
+            if [[ $(trueorfalse False driver_handles_share_servers) == False ]]; then
+                vm_name='manila_service_share_server_'$BE
+                nova boot $vm_name \
+                    --flavor $MANILA_SERVICE_VM_FLAVOR_NAME \
+                    --image $MANILA_SERVICE_IMAGE_NAME \
+                    --nic net-id=$private_net_id \
+                    --security-groups $MANILA_SERVICE_SECGROUP \
+                    --key-name $MANILA_SERVICE_KEYPAIR_NAME
 
-            vm_id=$(nova show $vm_name | grep ' id ' | get_field 2)
+                vm_id=$(nova show $vm_name | grep ' id ' | get_field 2)
 
-            iniset $MANILA_CONF $BE service_instance_name_or_id $vm_id
-            iniset $MANILA_CONF $BE service_net_name_or_ip private
-            iniset $MANILA_CONF $BE tenant_net_name_or_ip private
-            iniset $MANILA_CONF $BE migration_data_copy_node_ip $PUBLIC_NETWORK_GATEWAY
+                iniset $MANILA_CONF $BE service_instance_name_or_id $vm_id
+                iniset $MANILA_CONF $BE service_net_name_or_ip private
+                iniset $MANILA_CONF $BE tenant_net_name_or_ip private
+            fi
         fi
     done
+    if [[ $share_driver == $generic_driver ]]; then
+        iniset $MANILA_CONF DEFAULT migration_data_node_ip $PUBLIC_NETWORK_GATEWAY
+    fi
 }
 
 # create_manila_service_flavor - creates flavor, that will be used by backends

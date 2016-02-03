@@ -139,12 +139,17 @@ elif [[ "$DRIVER" == "generic" ]]; then
     fi
 fi
 
+if [[ "$DRIVER" == "generic" ]]; then
+    if [[ "$MULTITENANCY_ENABLED" == "True"  ]]; then
+        iniset $TEMPEST_CONFIG share run_migration_tests False
+    fi
+fi
+
 if [[ "$DRIVER" == "lvm"  ]]; then
     MANILA_TEMPEST_CONCURRENCY=8
     RUN_MANILA_CG_TESTS=False
     RUN_MANILA_MANAGE_TESTS=False
     iniset $TEMPEST_CONFIG share run_shrink_tests False
-    iniset $TEMPEST_CONFIG share run_migration_tests False
     iniset $TEMPEST_CONFIG share enable_ip_rules_for_protocols 'nfs'
     iniset $TEMPEST_CONFIG share enable_user_rules_for_protocols 'cifs'
     if ! grep $USERNAME_FOR_USER_RULES "/etc/passwd"; then

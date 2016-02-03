@@ -23,12 +23,10 @@ import time
 
 from oslo_config import cfg
 from oslo_log import log
-import six
 
 from manila import exception
 from manila.i18n import _, _LE
 from manila import network
-from manila.share import utils as share_utils
 from manila import utils
 
 LOG = log.getLogger(__name__)
@@ -73,43 +71,24 @@ share_opts = [
              'total physical capacity. A ratio of 1.0 means '
              'provisioned capacity cannot exceed the total physical '
              'capacity. A ratio lower than 1.0 is invalid.'),
-    cfg.StrOpt(
-        'migration_tmp_location',
-        default='/tmp/',
-        help="Temporary path to create and mount shares during migration."),
     cfg.ListOpt(
         'migration_ignore_files',
         default=['lost+found'],
         help="List of files and folders to be ignored when migrating shares. "
              "Items should be names (not including any path)."),
-    cfg.IntOpt(
-        'migration_wait_access_rules_timeout',
-        default=90,
-        help="Time to wait for access rules to be allowed/denied on backends "
-             "when migrating shares using generic approach (seconds)."),
-    cfg.IntOpt(
-        'migration_create_delete_share_timeout',
-        default=300,
-        help='Timeout for creating and deleting share instances '
-             'when performing share migration (seconds).'),
     cfg.StrOpt(
         'migration_mounting_backend_ip',
         help="Backend IP in admin network to use for mounting "
              "shares during migration."),
-    cfg.StrOpt(
-        'migration_data_copy_node_ip',
-        help="The IP of the node responsible for copying data during "
-             "migration, such as the data copy service node, reachable by "
-             "the backend."),
     cfg.StrOpt(
         'migration_protocol_mount_command',
         help="The command for mounting shares for this backend. Must specify"
              "the executable and all necessary parameters for the protocol "
              "supported. It is advisable to separate protocols per backend."),
     cfg.BoolOpt(
-        'migration_readonly_support',
+        'migration_readonly_rules_support',
         default=True,
-        help="Specify whether read only access mode is supported in this"
+        help="Specify whether read only access rule mode is supported in this"
              "backend."),
 ]
 
@@ -280,7 +259,7 @@ class ShareDriver(object):
                  'allowed': driver_handles_share_servers})
 
     def migrate_share(self, context, share_ref, host,
-                      dest_driver_migration_info):
+                      dest_driver_migration_info, notify):
         """Is called to perform driver migration.
 
         Driver should implement this method if willing to perform migration
@@ -291,10 +270,28 @@ class ShareDriver(object):
         :param host: Destination host and its capabilities.
         :param dest_driver_migration_info: Migration information provided by
         destination host.
+        :param notify: whether the migration should complete or wait for
+        2nd phase call.
         :returns: Boolean value indicating if driver migration succeeded.
         :returns: Dictionary containing a model update.
         """
         return None, None
+
+    def migration_complete(self, context, share_ref, host,
+                           dest_driver_migration_info):
+        """Is called to perform driver migration.
+
+        Driver should implement this method if willing to perform migration
+        in an optimized way, useful for when driver understands destination
+        backend.
+        :param context: The 'context.RequestContext' object for the request.
+        :param share_ref: Reference to the share being migrated.
+        :param host: Destination host and its capabilities.
+        :param dest_driver_migration_info: Migration information provided by
+        destination host.
+        :returns: Dictionary containing a model update.
+        """
+        return None
 
     def get_driver_migration_info(self, context, share_instance, share_server):
         """Is called to provide necessary driver migration logic."""
@@ -309,11 +306,8 @@ class ShareDriver(object):
         umount_cmd = self._get_unmount_command(context, share_instance,
                                                share_server)
 
-        access = self._get_access_rule_for_data_copy(
-            context, share_instance, share_server)
         return {'mount': mount_cmd,
-                'umount': umount_cmd,
-                'access': access}
+                'umount': umount_cmd}
 
     def _get_mount_command(self, context, share_instance, share_server):
         """Is called to delegate mounting share logic."""
@@ -322,10 +316,6 @@ class ShareDriver(object):
 
         mount_ip = self._get_mount_ip(share_instance, share_server)
         mount_cmd.append(mount_ip)
-
-        mount_path = self.configuration.safe_get(
-            'migration_tmp_location') + share_instance['id']
-        mount_cmd.append(mount_path)
 
         return mount_cmd
 
@@ -338,212 +328,23 @@ class ShareDriver(object):
             return ['mount', '-t', share_instance['share_proto'].lower()]
 
     def _get_mount_ip(self, share_instance, share_server):
-        # Note(ganso): DHSS = true drivers may need to override this method
-        # and use information saved in share_server structure.
-        mount_ip = self.configuration.safe_get('migration_mounting_backend_ip')
-        old_ip = share_instance['export_locations'][0]['path']
-        if mount_ip:
-            # NOTE(ganso): Does not currently work with hostnames and ipv6.
-            p = re.compile("\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}")
-            new_ip = p.sub(mount_ip, old_ip)
-            return new_ip
-        else:
-            return old_ip
+        # NOTE(ganso): If drivers want to override the export_location IP,
+        # they can do so using this configuration. This method can also be
+        # overridden if necessary.
+        path = next((x['path'] for x in share_instance['export_locations']
+                    if x['is_admin_only']), None)
+        if not path:
+            mount_ip = self.configuration.safe_get(
+                'migration_mounting_backend_ip')
+            path = share_instance['export_locations'][0]['path']
+            if mount_ip:
+                # NOTE(ganso): Does not currently work with hostnames and ipv6.
+                p = re.compile("\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}")
+                path = p.sub(mount_ip, path)
+        return path
 
     def _get_unmount_command(self, context, share_instance, share_server):
-        return ['umount',
-                self.configuration.safe_get('migration_tmp_location')
-                + share_instance['id']]
-
-    def _get_access_rule_for_data_copy(
-            self, context, share_instance, share_server):
-        """Is called to obtain access rule so data copy node can mount."""
-        # Note(ganso): The current method implementation is intended to work
-        # with Data Copy Service approach. If Manila Node is used for copying,
-        # then DHSS = true drivers may need to override this method.
-        service_ip = self.configuration.safe_get('migration_data_copy_node_ip')
-        return {'access_type': 'ip',
-                'access_level': 'rw',
-                'access_to': service_ip}
-
-    def copy_share_data(self, context, helper, share, share_instance,
-                        share_server, new_share_instance, new_share_server,
-                        migration_info_src, migration_info_dest):
-        """Copies share data of a given share to a new share.
-
-        :param context: The 'context.RequestContext' object for the request.
-        :param helper: instance of a share migration helper.
-        :param share: the share to copy.
-        :param share_instance: current instance holding the share.
-        :param share_server: current share_server hosting the share.
-        :param new_share_instance: share instance to copy data to.
-        :param new_share_server: share server that hosts destination share.
-        :param migration_info_src: migration information (source).
-        :param migration_info_dest: migration information (destination).
-        """
-
-        # NOTE(ganso): This method is here because it is debatable if it can
-        # be overridden by a driver or not. Personally I think it should not,
-        # else it would be possible to lose compatibility with generic
-        # migration between backends, but allows the driver to use it on its
-        # own implementation if it wants to.
-
-        migrated = False
-
-        mount_path = self.configuration.safe_get('migration_tmp_location')
-
-        src_access = migration_info_src['access']
-        dest_access = migration_info_dest['access']
-
-        if None in (src_access['access_to'], dest_access['access_to']):
-            msg = _("Access rules not appropriate for mounting share instances"
-                    " for migration of share %(share_id)s,"
-                    " source share access: %(src_ip)s, destination share"
-                    " access: %(dest_ip)s. Aborting.") % {
-                'src_ip': src_access['access_to'],
-                'dest_ip': dest_access['access_to'],
-                'share_id': share['id']}
-            raise exception.ShareMigrationFailed(reason=msg)
-
-        # NOTE(ganso): Removing any previously conflicting access rules, which
-        # would cause the following access_allow to fail for one instance.
-        helper.deny_migration_access(None, src_access, False)
-        helper.deny_migration_access(None, dest_access, False)
-
-        # NOTE(ganso): I would rather allow access to instances separately,
-        # but I require an access_id since it is a new access rule and
-        # destination manager must receive an access_id. I can either move
-        # this code to manager code so I can create the rule in DB manually,
-        # or ignore duplicate access rule errors for some specific scenarios.
-
-        try:
-            src_access_ref = helper.allow_migration_access(src_access)
-        except Exception as e:
-            LOG.error(_LE("Share migration failed attempting to allow "
-                          "access of %(access_to)s to share "
-                          "instance %(instance_id)s.") % {
-                'access_to': src_access['access_to'],
-                'instance_id': share_instance['id']})
-            msg = six.text_type(e)
-            LOG.exception(msg)
-            raise exception.ShareMigrationFailed(reason=msg)
-
-        try:
-            dest_access_ref = helper.allow_migration_access(dest_access)
-        except Exception as e:
-            LOG.error(_LE("Share migration failed attempting to allow "
-                          "access of %(access_to)s to share "
-                          "instance %(instance_id)s.") % {
-                'access_to': dest_access['access_to'],
-                'instance_id': new_share_instance['id']})
-            msg = six.text_type(e)
-            LOG.exception(msg)
-            helper.cleanup_migration_access(src_access_ref, src_access)
-            raise exception.ShareMigrationFailed(reason=msg)
-
-        # NOTE(ganso): From here we have the possibility of not cleaning
-        # anything when facing an error. At this moment, we have the
-        # destination instance in "inactive" state, while we are performing
-        # operations on the source instance. I think it is best to not clean
-        # the instance, leave it in "inactive" state, but try to clean
-        # temporary access rules, mounts, folders, etc, since no additional
-        # harm is done.
-
-        def _mount_for_migration(migration_info):
-
-            try:
-                utils.execute(*migration_info['mount'], run_as_root=True)
-            except Exception:
-                LOG.error(_LE("Failed to mount temporary folder for "
-                              "migration of share instance "
-                              "%(share_instance_id)s "
-                              "to %(new_share_instance_id)s") % {
-                    'share_instance_id': share_instance['id'],
-                    'new_share_instance_id': new_share_instance['id']})
-                helper.cleanup_migration_access(
-                    src_access_ref, src_access)
-                helper.cleanup_migration_access(
-                    dest_access_ref, dest_access)
-                raise
-
-        utils.execute('mkdir', '-p',
-                      ''.join((mount_path, share_instance['id'])))
-
-        utils.execute('mkdir', '-p',
-                      ''.join((mount_path, new_share_instance['id'])))
-
-        # NOTE(ganso): mkdir command sometimes returns faster than it
-        # actually runs, so we better sleep for 1 second.
-
-        time.sleep(1)
-
-        try:
-            _mount_for_migration(migration_info_src)
-        except Exception as e:
-            LOG.error(_LE("Share migration failed attempting to mount "
-                          "share instance %s.") % share_instance['id'])
-            msg = six.text_type(e)
-            LOG.exception(msg)
-            helper.cleanup_temp_folder(share_instance, mount_path)
-            helper.cleanup_temp_folder(new_share_instance, mount_path)
-            raise exception.ShareMigrationFailed(reason=msg)
-
-        try:
-            _mount_for_migration(migration_info_dest)
-        except Exception as e:
-            LOG.error(_LE("Share migration failed attempting to mount "
-                          "share instance %s.") % new_share_instance['id'])
-            msg = six.text_type(e)
-            LOG.exception(msg)
-            helper.cleanup_unmount_temp_folder(share_instance,
-                                               migration_info_src)
-            helper.cleanup_temp_folder(share_instance, mount_path)
-            helper.cleanup_temp_folder(new_share_instance, mount_path)
-            raise exception.ShareMigrationFailed(reason=msg)
-
-        try:
-            ignore_list = self.configuration.safe_get('migration_ignore_files')
-            copy = share_utils.Copy(mount_path + share_instance['id'],
-                                    mount_path + new_share_instance['id'],
-                                    ignore_list)
-            copy.run()
-            if copy.get_progress()['total_progress'] == 100:
-                migrated = True
-
-        except Exception as e:
-            LOG.exception(six.text_type(e))
-            LOG.error(_LE("Failed to copy files for "
-                          "migration of share instance %(share_instance_id)s "
-                          "to %(new_share_instance_id)s") % {
-                'share_instance_id': share_instance['id'],
-                'new_share_instance_id': new_share_instance['id']})
-
-        # NOTE(ganso): For some reason I frequently get AMQP errors after
-        # copying finishes, which seems like is the service taking too long to
-        # copy while not replying heartbeat messages, so AMQP closes the
-        # socket. There is no impact, it just shows a big trace and AMQP
-        # reconnects after, although I would like to prevent this situation
-        # without the use of additional threads. Suggestions welcome.
-
-        utils.execute(*migration_info_src['umount'], run_as_root=True)
-        utils.execute(*migration_info_dest['umount'], run_as_root=True)
-
-        utils.execute('rmdir', ''.join((mount_path, share_instance['id'])),
-                      check_exit_code=False)
-        utils.execute('rmdir', ''.join((mount_path, new_share_instance['id'])),
-                      check_exit_code=False)
-
-        helper.deny_migration_access(src_access_ref, src_access)
-        helper.deny_migration_access(dest_access_ref, dest_access)
-
-        if not migrated:
-            msg = ("Copying from share instance %(instance_id)s "
-                   "to %(new_instance_id)s did not succeed." % {
-                       'instance_id': share_instance['id'],
-                       'new_instance_id': new_share_instance['id']})
-            raise exception.ShareMigrationFailed(reason=msg)
-
-        LOG.debug("Copying completed in migration for share %s." % share['id'])
+        return ['umount']
 
     def create_share(self, context, share, share_server=None):
         """Is called to create share."""
