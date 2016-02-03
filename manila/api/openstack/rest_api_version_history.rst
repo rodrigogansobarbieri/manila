@@ -89,3 +89,9 @@ user documentation.
 2.12
 ----
   Share snapshot manage and unmanage API.
+
+2.13
+----
+  Added Share migration 'migration_cancel', 'migration_get_progress',
+  'migration_complete' API, renamed 'migrate_share' to 'migration_start' and
+  added notify parameter to 'migration_start'.

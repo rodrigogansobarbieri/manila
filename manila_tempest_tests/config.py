@@ -36,7 +36,7 @@ ShareGroup = [
                help="The minimum api microversion is configured to be the "
                     "value of the minimum microversion supported by Manila."),
     cfg.StrOpt("max_api_microversion",
-               default="2.12",
+               default="2.13",
                help="The maximum api microversion is configured to be the "
                     "value of the latest microversion supported by Manila."),
     cfg.StrOpt("region",
@@ -180,7 +180,7 @@ ShareGroup = [
                default="100",
                help="Flavor used for client vm in scenario tests."),
     cfg.IntOpt("migration_timeout",
-               default=1200,
+               default=1500,
                help="Time to wait for share migration before "
                     "timing out (seconds)."),
     cfg.StrOpt("default_share_type_name",

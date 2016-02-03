@@ -136,3 +136,9 @@ dbus-removeexport: RegExpFilter, dbus-send, root, dbus-send, --print-reply, --sy
 
 # manila/share/drivers/ganesha/manager.py:
 rmconf: RegExpFilter, sh, root, sh, -c, rm -f /.*/\*\.conf$
+
+# manila/data/utils.py: 'ls', '-pA1', '--group-directories-first', '%s'
+ls: CommandFilter, ls, root
+
+# manila/data/utils.py: 'touch', '--reference=%s', '%s'
+touch: CommandFilter, touch, root
