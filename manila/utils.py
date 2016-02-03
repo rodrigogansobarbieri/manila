@@ -29,6 +29,7 @@ import shutil
 import socket
 import sys
 import tempfile
+import time
 
 from eventlet import pools
 import netaddr
@@ -42,6 +43,7 @@ import paramiko
 import retrying
 import six
 
+from manila.common import constants
 from manila.db import api as db_api
 from manila import exception
 from manila.i18n import _
@@ -613,3 +615,32 @@ def require_driver_initialized(func):
             raise exception.DriverNotInitialized(driver=driver_name)
         return func(self, *args, **kwargs)
     return wrapper
+
+
+def wait_for_access_update(context, db, share_instance,
+                           migration_wait_access_rules_timeout):
+    starttime = time.time()
+    deadline = starttime + migration_wait_access_rules_timeout
+    tries = 0
+
+    while True:
+        instance = db.share_instance_get(context, share_instance['id'])
+
+        if instance['access_rules_status'] == constants.STATUS_ACTIVE:
+            break
+
+        tries += 1
+        now = time.time()
+        if instance['access_rules_status'] == constants.STATUS_ERROR:
+            msg = _("Failed to update access rules"
+                    " on share instance %s") % share_instance['id']
+            raise exception.ShareMigrationFailed(reason=msg)
+        elif now > deadline:
+            msg = _("Timeout trying to update access rules"
+                    " on share instance %(share_id)s. Timeout "
+                    "was %(timeout)s seconds.") % {
+                'share_id': share_instance['id'],
+                'timeout': migration_wait_access_rules_timeout}
+            raise exception.ShareMigrationFailed(reason=msg)
+        else:
+            time.sleep(tries ** 2)

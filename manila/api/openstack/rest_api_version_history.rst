@@ -85,3 +85,9 @@ user documentation.
   'Experimental'. Share APIs return two new attributes: 'has_replicas' and
   'replication_type'. Share instance APIs return a new attribute,
   'replica_state'.
+
+2.12
+----
+  Added Share migration 'migration_cancel', 'migration_get_progress',
+  'migration_complete' API, renamed 'migrate_share' to 'migration_start' and
+  added notify parameter to 'migration_start'.
