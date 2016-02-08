@@ -28,6 +28,7 @@ from webob import exc
 from manila.api import common
 from manila.api.openstack import wsgi
 from manila.api.views import shares as share_views
+from manila.common import constants
 from manila import db
 from manila import exception
 from manila.i18n import _
@@ -96,7 +97,7 @@ class ShareMixin(object):
 
         return webob.Response(status_int=202)
 
-    def _migrate_share(self, req, id, body):
+    def _migrate_share(self, req, id, body, do_notify=False):
         """Migrate a share to the specified host."""
         context = req.environ['manila.context']
         try:
@@ -116,7 +117,82 @@ class ShareMixin(object):
         except ValueError:
             raise exc.HTTPBadRequest(
                 explanation=_("Bad value for 'force_host_copy'"))
-        self.share_api.migrate_share(context, share, host, force_host_copy)
+        if do_notify:
+            notify = params.get('notify', True)
+            try:
+                notify = strutils.bool_from_string(notify, strict=True)
+            except ValueError:
+                raise exc.HTTPBadRequest(
+                    explanation=_("Bad value for 'notify'"))
+        else:
+            # NOTE(ganso): default notify value is True
+            notify = True
+
+        self.share_api.migrate_share(context, share, host, force_host_copy,
+                                     notify)
+        return webob.Response(status_int=202)
+
+    def _migration_complete(self, req, id, body):
+        """Invokes 2nd phase of share migration."""
+        context = req.environ['manila.context']
+        try:
+            share = self.share_api.get(context, id)
+        except exception.NotFound:
+            msg = _("Share %s not found.") % id
+            raise exc.HTTPNotFound(explanation=msg)
+        self.share_api.migration_complete(context, share)
+        return webob.Response(status_int=202)
+
+    def _migration_cancel(self, req, id, body):
+        """Attempts to cancel share migration."""
+        context = req.environ['manila.context']
+        try:
+            share = self.share_api.get(context, id)
+        except exception.NotFound:
+            msg = _("Share %s not found.") % id
+            raise exc.HTTPNotFound(explanation=msg)
+        self.share_api.migration_cancel(context, share)
+        return webob.Response(status_int=202)
+
+    def _migration_get_progress(self, req, id, body):
+        """Retrieve share migration progress for a given share."""
+        context = req.environ['manila.context']
+        try:
+            share = self.share_api.get(context, id)
+        except exception.NotFound:
+            msg = _("Share %s not found.") % id
+            raise exc.HTTPNotFound(explanation=msg)
+        result = self.share_api.migration_get_progress(context, share)
+        # shares = self._view_builder.detail_list(req, result)
+        # return webob.Response(status_int=202)
+        return result
+
+    def _reset_task_state(self, req, id, body):
+        """Reset status on the resource."""
+        context = req.environ['manila.context']
+        update = {}
+        try:
+            params = body['reset_task_state']
+            update['task_state'] = params['task_state']
+        except (TypeError, KeyError):
+            raise webob.exc.HTTPBadRequest(
+                explanation="Must specify 'task_state'")
+        if update.get('task_state') is None:
+            msg = ("Empty task state. Please supply a task state. Valid task "
+                   "states: " + ", ".join(constants.TASK_STATE_STATUSES) + ".")
+            raise webob.exc.HTTPBadRequest(explanation=msg)
+        elif update['task_state'] not in constants.TASK_STATE_STATUSES:
+            msg = ("Invalid task state. Valid task states: " +
+                   ", ".join(constants.TASK_STATE_STATUSES) + ".")
+            raise webob.exc.HTTPBadRequest(explanation=msg)
+
+        msg = "Updating %(resource)s '%(id)s' with '%(update)r'"
+        LOG.debug(msg, {'resource': self.resource_name, 'id': id,
+                        'update': update})
+        try:
+            self._update(context, id, update)
+        except exception.NotFound as e:
+            raise webob.exc.HTTPNotFound(six.text_type(e))
         return webob.Response(status_int=202)
 
     def index(self, req):

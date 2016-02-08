@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from manila.api.openstack import api_version_request as api_version
 from manila.api.openstack import wsgi
 from manila.api.v1 import share_manage
 from manila.api.v1 import share_unmanage
@@ -74,7 +75,32 @@ class ShareController(shares.ShareMixin,
     @wsgi.Controller.api_version('2.7', experimental=True)
     @wsgi.action("migrate_share")
     def migrate_share(self, req, id, body):
-        return self._migrate_share(req, id, body)
+        # TODO(ganso): remove that check and add versioned method for
+        #  migration when bug '1512403' is fixed
+        if req.api_version_request < api_version.APIVersionRequest("2.11"):
+            return self._migrate_share(req, id, body, do_notify=False)
+        else:
+            return self._migrate_share(req, id, body, do_notify=True)
+
+    @wsgi.Controller.api_version('2.11', experimental=True)
+    @wsgi.action("migration_complete")
+    def migration_complete(self, req, id, body):
+        return self._migration_complete(req, id, body)
+
+    @wsgi.Controller.api_version('2.11', experimental=True)
+    @wsgi.action("migration_cancel")
+    def migration_cancel(self, req, id, body):
+        return self._migration_cancel(req, id, body)
+
+    @wsgi.Controller.api_version('2.11', experimental=True)
+    @wsgi.action("migration_get_progress")
+    def migration_get_progress(self, req, id, body):
+        return self._migration_get_progress(req, id, body)
+
+    @wsgi.Controller.api_version('2.11', experimental=True)
+    @wsgi.action("reset_task_state")
+    def reset_task_state(self, req, id, body):
+        return self._reset_task_state(req, id, body)
 
     @wsgi.Controller.api_version('2.0', '2.6')
     @wsgi.action('os-allow_access')

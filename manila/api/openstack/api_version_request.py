@@ -57,6 +57,9 @@ REST_API_VERSION_HISTORY = """
     * 2.9  - Add export locations API
     * 2.10 - Field 'access_rules_status' was added to shares and share
             instances.
+    * 2.11 - Added Share migration 'migration_cancel',
+             'migration_get_progress', 'migration_complete' methods and
+             notify parameter to 'migrate_share'.
 
 """
 
@@ -64,7 +67,7 @@ REST_API_VERSION_HISTORY = """
 # The default api version request is defined to be the
 # the minimum version of the API supported.
 _MIN_API_VERSION = "2.0"
-_MAX_API_VERSION = "2.10"
+_MAX_API_VERSION = "2.11"
 DEFAULT_API_VERSION = _MIN_API_VERSION
 
 

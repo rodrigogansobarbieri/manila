@@ -78,3 +78,8 @@ user documentation.
 2.10
 ----
   Field 'access_rules_status' was added to shares and share instances.
+
+2.11
+----
+  Added Share migration 'migration_cancel', 'migration_get_progress',
+  'migration_complete' methods and notify parameter to 'migrate_share'.
