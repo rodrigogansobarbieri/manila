@@ -88,19 +88,19 @@ class DataRpcAPITestCase(test.TestCase):
                             share_id=self.fake_share['id'],
                             ignore_list=[],
                             share_instance_id='fake_ins_id',
-                            new_share_instance_id='new_fake_ins_id',
+                            dest_share_instance_id='dest_fake_ins_id',
                             migration_info_src={},
                             migration_info_dest={},
                             notify=True)
 
-    def test_migration_cancel(self):
-        self._test_data_api('migration_cancel',
+    def test_data_copy_cancel(self):
+        self._test_data_api('data_copy_cancel',
                             rpc_method='call',
                             version='1.1',
                             share_id=self.fake_share['id'])
 
-    def test_migration_get_progress(self):
-        self._test_data_api('migration_get_progress',
+    def test_data_copy_get_progress(self):
+        self._test_data_api('data_copy_get_progress',
                             rpc_method='call',
                             version='1.1',
                             share_id=self.fake_share['id'])

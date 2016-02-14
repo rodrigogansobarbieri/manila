@@ -360,7 +360,31 @@ class ShareDriverTestCase(test.TestCase):
 
         self.assertEqual((None, None),
                          share_driver.migrate_share(None, None, None,
-                                                    None, None))
+                                                    None, None, None))
+
+    def test_migration_complete(self):
+
+        driver.CONF.set_default('driver_handles_share_servers', False)
+        share_driver = driver.ShareDriver(False)
+
+        share_driver.migration_complete(None, None, None, None)
+
+    def test_migration_cancel(self):
+
+        driver.CONF.set_default('driver_handles_share_servers', False)
+        share_driver = driver.ShareDriver(False)
+
+        self.assertRaises(NotImplementedError, share_driver.migration_cancel,
+                          None, None, None, None)
+
+    def test_migration_get_progress(self):
+
+        driver.CONF.set_default('driver_handles_share_servers', False)
+        share_driver = driver.ShareDriver(False)
+
+        self.assertRaises(NotImplementedError,
+                          share_driver.migration_get_progress,
+                          None, None, None, None)
 
     def test_get_driver_migration_info_default(self):
 
@@ -372,8 +396,8 @@ class ShareDriverTestCase(test.TestCase):
 
     def test_get_migration_info_default(self):
 
-        expected = {'mount': ['mount', '-t', 'fake_proto', '/fake/fake_id'],
-                    'umount': ['umount']}
+        expected = {'mount': 'mount -t fake_proto /fake/fake_id %(path)s',
+                    'unmount': 'umount %(path)s'}
         fake_share = {'id': 'fake_id',
                       'share_proto': 'fake_proto',
                       'export_locations': [{'path': '/fake/fake_id',
@@ -391,8 +415,8 @@ class ShareDriverTestCase(test.TestCase):
 
     def test_get_migration_info_parameters(self):
 
-        expected = {'mount': ['fake_mount', '/200.200.200.200/fake_id'],
-                    'umount': ['umount']}
+        expected = {'mount': 'fake_mount /200.200.200.200/fake_id %(path)s',
+                    'unmount': 'umount %(path)s'}
 
         fake_share = {'id': 'fake_id',
                       'share_proto': 'fake_proto',
@@ -400,8 +424,8 @@ class ShareDriverTestCase(test.TestCase):
                                             'is_admin_only': False}]}
 
         driver.CONF.set_default('driver_handles_share_servers', False)
-        driver.CONF.set_default('migration_protocol_mount_command',
-                                'fake_mount')
+        driver.CONF.set_default('share_mount_template',
+                                'fake_mount %(export)s %(path)s')
         driver.CONF.set_default('migration_mounting_backend_ip',
                                 '200.200.200.200')
 

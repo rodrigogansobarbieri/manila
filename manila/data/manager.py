@@ -16,21 +16,20 @@
 Data Service
 """
 
-import time
+import os
 
 from oslo_config import cfg
 from oslo_log import log
 import six
 
-from manila.i18n import _, _LE, _LI
+from manila.i18n import _, _LE, _LI, _LW
 from manila.common import constants
 from manila import context
-from manila.data import migration
+from manila.data import helper
 from manila.data import utils as data_utils
 from manila import exception
 from manila import manager
 from manila.share import rpcapi as share_rpc
-from manila import utils
 
 LOG = log.getLogger(__name__)
 
@@ -39,16 +38,6 @@ data_opts = [
         'migration_tmp_location',
         default='/tmp/',
         help="Temporary path to create and mount shares during migration."),
-    cfg.StrOpt(
-        'migration_data_node_ip',
-        default=None,
-        help="The IP of the node interface connected to the admin network. "
-             "Used for allowing access to the mounting shares."),
-    cfg.StrOpt(
-        'migration_data_node_cert',
-        default=None,
-        help="The certificate installed in the data node in order to "
-             "allow access to certificate authentication-based shares."),
 
 ]
 
@@ -71,10 +60,71 @@ class DataManager(manager.Manager):
         for share in shares:
             if share['task_state'] in constants.BUSY_COPYING_STATES:
                 self.db.share_update(ctxt, share['id'], {
-                    'task_state': constants.TASK_STATE_MIGRATION_ERROR
+                    'task_state': constants.TASK_STATE_DATA_COPYING_ERROR
                 })
 
-    def migration_cancel(self, context, share_id):
+    def migrate_share(self, context, ignore_list, share_id, share_instance_id,
+                      dest_share_instance_id, migration_info_src,
+                      migration_info_dest, notify):
+
+        LOG.info(_LI(
+            "Received request to migrate share content from share instance "
+            "%(instance_id)s to instance %(dest_instance_id)s.")
+            % {'instance_id': share_instance_id,
+               'dest_instance_id': dest_share_instance_id})
+
+        share_ref = self.db.share_get(context, share_id)
+
+        share_rpcapi = share_rpc.ShareAPI()
+
+        mount_path = CONF.migration_tmp_location
+
+        try:
+            copy = data_utils.Copy(
+                os.path.join(mount_path, share_instance_id),
+                os.path.join(mount_path, dest_share_instance_id),
+                ignore_list)
+
+            self._copy_share_data(
+                context, copy, share_ref, None, share_instance_id,
+                dest_share_instance_id, migration_info_src,
+                migration_info_dest)
+        except exception.ShareDataCopyCancelled:
+            share_rpcapi.migration_complete(
+                context, share_ref, share_instance_id, dest_share_instance_id)
+            return
+        except Exception as e:
+            self.db.share_update(context, share_id, {
+                'task_state':
+                    constants.TASK_STATE_DATA_COPYING_ERROR
+            })
+            error = six.text_type(e)
+            LOG.exception(error)
+            share_rpcapi.migration_complete(
+                context, share_ref, share_instance_id, dest_share_instance_id)
+            raise exception.ShareDataCopyFailed(reason=error)
+        finally:
+            if self.busy_tasks_shares.get(share_id):
+                self.busy_tasks_shares.pop(share_id)
+
+        LOG.info(_LI(
+            "Completed copy operation of migrating share content from share "
+            "instance %(instance_id)s to instance %(dest_instance_id)s.")
+            % {'instance_id': share_instance_id,
+                'dest_instance_id': dest_share_instance_id})
+
+        if notify:
+            LOG.info(_LI(
+                "Notifying source backend that migrating share content from"
+                " share instance %(instance_id)s to instance "
+                "%(dest_instance_id)s completed.") % {
+                    'instance_id': share_instance_id,
+                    'dest_instance_id': dest_share_instance_id})
+
+            share_rpcapi.migration_complete(
+                context, share_ref, share_instance_id, dest_share_instance_id)
+
+    def data_copy_cancel(self, context, share_id):
         LOG.info(_LI("Received request to cancel share migration "
                      "of share %s.") % share_id)
         copy = self.busy_tasks_shares.get(share_id)
@@ -86,7 +136,7 @@ class DataManager(manager.Manager):
             LOG.error(msg)
             raise exception.InvalidShare(reason=msg)
 
-    def migration_get_progress(self, context, share_id):
+    def data_copy_get_progress(self, context, share_id):
         LOG.info(_LI("Received request to get share migration information "
                      "of share %s.") % share_id)
         copy = self.busy_tasks_shares.get(share_id)
@@ -103,231 +153,242 @@ class DataManager(manager.Manager):
             LOG.error(msg)
             raise exception.InvalidShare(reason=msg)
 
-    def migrate_share(self, context, ignore_list, share_id, share_instance_id,
-                      new_share_instance_id, migration_info_src,
-                      migration_info_dest, notify):
-
+    def copy_share_data(self, context, src_share_id, dest_share_id,
+                        path_src, path_dest, share_instance_id,
+                        dest_share_instance_id, migration_info_src,
+                        migration_info_dest, callback):
         LOG.info(_LI(
-            "Received request to migrate share content from share instance "
-            "%(instance_id)s to instance %(new_instance_id)s.")
+            "Received request to copy share data from share instance "
+            "%(instance_id)s to instance %(dest_instance_id)s.")
             % {'instance_id': share_instance_id,
-               'new_instance_id': new_share_instance_id})
+               'dest_instance_id': dest_share_instance_id})
 
-        self.db.share_update(context, share_id, {
-            'task_state':
-                constants.TASK_STATE_MIGRATION_COPYING_STARTING
-        })
-
-        share_ref = self.db.share_get(context, share_id)
-
-        helper = migration.ShareMigrationHelper(
-            context, self.db, share_ref, share_instance_id,
-            new_share_instance_id)
+        src_share_ref = self.db.share_get(context, src_share_id)
+        dest_share_ref = self.db.share_get(context, dest_share_id)
 
         share_rpcapi = share_rpc.ShareAPI()
-
-        try:
-            self._copy_share_data(
-                context, helper, ignore_list, share_ref, share_instance_id,
-                new_share_instance_id, migration_info_src, migration_info_dest)
-        except exception.ShareMigrationCancelled:
-            share_rpcapi.migration_complete(
-                context, share_ref, share_instance_id, new_share_instance_id,
-                constants.TASK_STATE_MIGRATION_CANCELLED)
-            return
-        except Exception as e:
-            error = six.text_type(e)
-            LOG.exception(error)
-            share_rpcapi.migration_complete(
-                context, share_ref, share_instance_id, new_share_instance_id,
-                constants.TASK_STATE_MIGRATION_ERROR)
-            raise exception.ShareMigrationFailed(reason=error)
-        finally:
-            if self.busy_tasks_shares.get(share_id):
-                self.busy_tasks_shares.pop(share_id)
-
-        LOG.info(_LI(
-            "Completed copy operation of migrating share content from share "
-            "instance %(instance_id)s to instance %(new_instance_id)s.")
-            % {'instance_id': share_instance_id,
-                'new_instance_id': new_share_instance_id})
-
-        self.db.share_update(context, share_id, {
-            'task_state':
-                constants.TASK_STATE_MIGRATION_COPYING_COMPLETED
-        })
-
-        if notify:
-            LOG.info(_LI(
-                "Notifying source backend that migrating share content from"
-                " share instance %(instance_id)s to instance "
-                "%(new_instance_id)s completed.") % {
-                    'instance_id': share_instance_id,
-                    'new_instance_id': new_share_instance_id})
-
-            share_rpcapi.migration_complete(
-                context, share_ref, share_instance_id, new_share_instance_id,
-                None)
-
-    def _copy_share_data(self, context, helper, ignore_list, share,
-                         share_instance_id, new_share_instance_id,
-                         migration_info_src, migration_info_dest):
-
-        migrated = False
         mount_path = CONF.migration_tmp_location
 
-        if share['share_proto'].upper() == 'GLUSTERFS':
-
-            access_to = CONF.migration_data_node_cert
-            access_type = 'cert'
-
-            if not access_to:
-                msg = _("Data Node Certificate not specified. Cannot mount "
-                        "instances for migration of share %(share_id)s. "
-                        "Aborting.") % {
-                    'share_id': share['id']}
-                raise exception.ShareMigrationFailed(reason=msg)
-
-        else:
-
-            access_to = CONF.migration_data_node_ip
-            access_type = 'ip'
-
-            if not access_to:
-                msg = _("Data Node Admin Network IP not specified. Cannot "
-                        "mount instances for migration of share %(share_id)s. "
-                        "Aborting.") % {
-                    'share_id': share['id']}
-                raise exception.ShareMigrationFailed(reason=msg)
-
-        access = {'access_type': access_type,
-                  'access_level': 'rw',
-                  'access_to': access_to}
-
-        src_path = ''.join((mount_path, share_instance_id))
-        dest_path = ''.join((mount_path, new_share_instance_id))
-
         try:
-            access_ref = helper.allow_migration_access(access)
+            copy = data_utils.Copy(
+                os.path.join(mount_path, share_instance_id, path_src),
+                os.path.join(mount_path, dest_share_instance_id, path_dest),
+                [])
+
+            self._copy_share_data(
+                context, copy, src_share_ref, dest_share_ref,
+                share_instance_id, dest_share_instance_id, migration_info_src,
+                migration_info_dest)
+        except exception.ShareDataCopyCancelled:
+            share_rpcapi.driver_data_copy_complete(
+                context, src_share_ref, dest_share_ref, path_src, path_dest)
+            return
         except Exception as e:
-            LOG.error(_LE("Share migration failed attempting to allow "
-                          "access %(access)s to share %(share_id)s.") % {
-                'access': access,
-                'share_id': share['id']})
-            msg = six.text_type(e)
-            LOG.exception(msg)
-            raise exception.ShareMigrationFailed(reason=msg)
+            self.db.share_update(context, src_share_id, {
+                'task_state':
+                    constants.TASK_STATE_DATA_COPYING_ERROR
+            })
+            error = six.text_type(e)
+            LOG.exception(error)
+            share_rpcapi.driver_data_copy_complete(
+                context, src_share_ref, dest_share_ref, path_src, path_dest)
+            raise exception.ShareDataCopyFailed(reason=error)
+        finally:
+            if self.busy_tasks_shares.get(src_share_id):
+                self.busy_tasks_shares.pop(src_share_id)
+            if self.busy_tasks_shares.get(dest_share_id):
+                self.busy_tasks_shares.pop(dest_share_id)
 
-        def _mount_for_migration(migration_info, path):
+        LOG.info(_LI(
+            "Completed operation of copying share data from share "
+            "instance %(instance_id)s to instance %(dest_instance_id)s.")
+            % {'instance_id': share_instance_id,
+                'dest_instance_id': dest_share_instance_id})
 
-            migration_info['mount'].append(path)
+        LOG.info(_LI(
+            "Notifying source backend that copying share data from"
+            " share instance %(instance_id)s to instance "
+            "%(dest_instance_id)s completed.") % {
+                'instance_id': share_instance_id,
+                'dest_instance_id': dest_share_instance_id})
 
+        share_rpcapi.driver_data_copy_complete(
+            context, src_share_ref, dest_share_ref, path_src, path_dest,
+            callback)
+
+    def _copy_share_data(
+            self, context, copy, src_share, dest_share, share_instance_id,
+            dest_share_instance_id, migration_info_src, migration_info_dest):
+
+        copied = False
+        mount_path = CONF.migration_tmp_location
+
+        for share in (src_share, dest_share):
+            if share:
+                self.db.share_update(context, share['id'], {
+                    'task_state':
+                        constants.TASK_STATE_DATA_COPYING_STARTING
+                })
+
+        helper_src = helper.DataServiceHelper(context, self.db, src_share)
+        if dest_share:
+            helper_dest = helper.DataServiceHelper(
+                context, self.db, dest_share)
+        else:
+            helper_dest = helper_src
+
+        access_ref_src = helper_src.allow_access_to_data_service(src_share)
+        if dest_share:
             try:
-                utils.execute(*migration_info['mount'], run_as_root=True)
-            except Exception:
-                LOG.error(_LE("Failed to mount temporary folder for "
-                              "migration of share instance "
-                              "%(share_instance_id)s "
-                              "to %(new_share_instance_id)s") % {
-                    'share_instance_id': share_instance_id,
-                    'new_share_instance_id': new_share_instance_id})
-                helper.cleanup_migration_access(access_ref)
-                raise
+                access_ref_dest = helper_dest.allow_access_to_data_service(
+                    dest_share)
+            except Exception as e:
+                LOG.error(_LE("Share migration failed attempting to allow "
+                              "access to share instance %(instance_id)s.") % {
+                    'instance_id': dest_share_instance_id})
+                msg = six.text_type(e)
+                LOG.exception(msg)
+                helper_src.cleanup_data_access(access_ref_src,
+                                               share_instance_id)
+                raise exception.ShareDataCopyFailed(reason=msg)
+        else:
+            access_ref_dest = access_ref_src
 
-        def _run_unmount_command(migration_info, path):
-
-            migration_info['umount'].append(path)
-            utils.execute(*migration_info['umount'], run_as_root=True)
-
-        utils.execute('mkdir', '-p', src_path)
-
-        utils.execute('mkdir', '-p', dest_path)
-
-        # NOTE(ganso): mkdir command sometimes returns faster than it
-        # actually runs, so we better sleep for 1 second.
-
-        time.sleep(1)
-
+        def _call_cleanups(items):
+            for item in items:
+                if 'unmount_src' == item:
+                    helper_src.cleanup_unmount_temp_folder(
+                        migration_info_src['unmount'], mount_path,
+                        share_instance_id)
+                elif 'temp_folder_src' == item:
+                    helper_src.cleanup_temp_folder(share_instance_id,
+                                                   mount_path)
+                elif 'temp_folder_dest' == item:
+                    helper_dest.cleanup_temp_folder(dest_share_instance_id,
+                                                    mount_path)
+                elif 'access_src' == item:
+                    helper_src.cleanup_data_access(access_ref_src,
+                                                   share_instance_id)
+                elif 'access_dest' == item:
+                    helper_dest.cleanup_data_access(access_ref_dest,
+                                                    dest_share_instance_id)
         try:
-            _mount_for_migration(migration_info_src, src_path)
+            helper_src.mount_share_instance(
+                migration_info_src['mount'], mount_path, share_instance_id)
         except Exception as e:
             LOG.error(_LE("Share migration failed attempting to mount "
                           "share instance %s.") % share_instance_id)
             msg = six.text_type(e)
             LOG.exception(msg)
-            helper.cleanup_temp_folder(share_instance_id, mount_path)
-            helper.cleanup_temp_folder(new_share_instance_id, mount_path)
-            raise exception.ShareMigrationFailed(reason=msg)
+            _call_cleanups(['temp_folder_src', 'access_dest', 'access_src'])
+            raise exception.ShareDataCopyFailed(reason=msg)
 
         try:
-            _mount_for_migration(migration_info_dest, dest_path)
+            helper_dest.mount_share_instance(
+                migration_info_dest['mount'], mount_path,
+                dest_share_instance_id)
         except Exception as e:
             LOG.error(_LE("Share migration failed attempting to mount "
-                          "share instance %s.") % new_share_instance_id)
+                          "share instance %s.") % dest_share_instance_id)
             msg = six.text_type(e)
             LOG.exception(msg)
-            helper.cleanup_unmount_temp_folder(share_instance_id,
-                                               migration_info_src, src_path)
-            helper.cleanup_temp_folder(share_instance_id, mount_path)
-            helper.cleanup_temp_folder(new_share_instance_id, mount_path)
-            raise exception.ShareMigrationFailed(reason=msg)
+            _call_cleanups(['temp_folder_dest', 'unmount_src',
+                            'temp_folder_src', 'access_dest', 'access_src'])
+            raise exception.ShareDataCopyFailed(reason=msg)
 
-        copy = None
+        for share in (src_share, dest_share):
+            if share:
+                self.busy_tasks_shares[share['id']] = copy
+                self.db.share_update(context, share['id'], {
+                    'task_state':
+                        constants.TASK_STATE_DATA_COPYING_IN_PROGRESS
+                })
 
         try:
-            copy = data_utils.Copy(mount_path + share_instance_id,
-                                   mount_path + new_share_instance_id,
-                                   ignore_list)
-
-            self.busy_tasks_shares[share['id']] = copy
-
-            self.db.share_update(context, share['id'], {
-                'task_state':
-                    constants.TASK_STATE_MIGRATION_COPYING_IN_PROGRESS
-            })
-
             copy.run()
 
-            self.db.share_update(
-                context, share['id'],
-                {'task_state':
-                    constants.TASK_STATE_MIGRATION_COPYING_COMPLETING
-                 })
+            for share in (src_share, dest_share):
+                if share:
+                    self.db.share_update(context, share['id'], {
+                        'task_state':
+                            constants.TASK_STATE_DATA_COPYING_COMPLETING
+                    })
 
             if copy.get_progress()['total_progress'] == 100:
-                migrated = True
+                copied = True
 
         except Exception as e:
             LOG.exception(six.text_type(e))
-            LOG.error(_LE("Failed to copy files for "
-                          "migration of share instance %(share_instance_id)s "
-                          "to %(new_share_instance_id)s") % {
+            LOG.error(_LE("Failed to copy data from share instance "
+                          "%(share_instance_id)s to "
+                          "%(dest_share_instance_id)s.") % {
                 'share_instance_id': share_instance_id,
-                'new_share_instance_id': new_share_instance_id})
+                'dest_share_instance_id': dest_share_instance_id})
 
-        # TODO(ganso): Implement queues in Data Service to prevent AMQP
-        # errors when migration takes a very long time.
+        try:
+            helper_src.unmount_share_instance(migration_info_src['unmount'],
+                                              mount_path, share_instance_id)
+        except Exception as e:
+            LOG.exception(six.text_type(e))
+            LOG.error(_LE("Could not unmount folder of instance"
+                          " %s after its data copy.") % share_instance_id)
 
-        _run_unmount_command(migration_info_src, src_path)
-        _run_unmount_command(migration_info_dest, dest_path)
+        try:
+            helper_dest.unmount_share_instance(
+                migration_info_dest['unmount'], mount_path,
+                dest_share_instance_id)
+        except Exception as e:
+            LOG.exception(six.text_type(e))
+            LOG.error(_LE("Could not unmount folder of instance"
+                          " %s after its data copy.") % dest_share_instance_id)
 
-        utils.execute('rmdir', ''.join((mount_path, share_instance_id)),
-                      check_exit_code=False)
-        utils.execute('rmdir', ''.join((mount_path, new_share_instance_id)),
-                      check_exit_code=False)
+        try:
+            helper_src.deny_access_to_data_service(
+                access_ref_src, share_instance_id)
+        except Exception as e:
+            LOG.exception(six.text_type(e))
+            LOG.error(_LE("Could not deny access to instance"
+                          " %s after its data copy.") % share_instance_id)
 
-        helper.deny_migration_access(access_ref)
+        try:
+            helper_dest.deny_access_to_data_service(
+                access_ref_dest, dest_share_instance_id)
+        except Exception as e:
+            LOG.exception(six.text_type(e))
+            LOG.error(_LE("Could not deny access to instance"
+                          " %s after its data copy.") % dest_share_instance_id)
 
         if copy and copy.cancelled:
-            msg = _("Share migration of share %s was cancelled.") % share['id']
-            LOG.warn(msg)
-            raise exception.ShareMigrationCancelled(share_id=share['id'])
+            for share in (src_share, dest_share):
+                if share:
+                    self.db.share_update(context, share['id'], {
+                        'task_state':
+                            constants.TASK_STATE_DATA_COPYING_CANCELLED
+                    })
+            LOG.warning(_LW("Copy of data from share instance "
+                            "%(src_instance)s to share instance "
+                            "%(dest_instance)s was cancelled.") % (
+                {'src_instance': share_instance_id,
+                 'dest_instance': dest_share_instance_id}))
+            raise exception.ShareDataCopyCancelled(
+                src_instance=share_instance_id,
+                dest_instance=dest_share_instance_id)
 
-        elif not migrated:
-            msg = ("Copying from share instance %(instance_id)s "
-                   "to %(new_instance_id)s did not succeed." % {
+        elif not copied:
+            msg = ("Copying data from share instance %(instance_id)s "
+                   "to %(dest_instance_id)s did not succeed." % {
                        'instance_id': share_instance_id,
-                       'new_instance_id': new_share_instance_id})
-            raise exception.ShareMigrationFailed(reason=msg)
+                       'dest_instance_id': dest_share_instance_id})
+            raise exception.ShareDataCopyFailed(reason=msg)
 
-        LOG.debug("Copying completed in migration for share %s." % share['id'])
+        for share in (src_share, dest_share):
+            if share:
+                self.db.share_update(context, share['id'], {
+                    'task_state':
+                        constants.TASK_STATE_DATA_COPYING_COMPLETED
+                })
+
+        LOG.debug("Copy of data from share instance %(src_instance)s to "
+                  "share instance %(dest_instance)s was successful.",
+                  {'src_instance': share_instance_id,
+                   'dest_instance': dest_share_instance_id})

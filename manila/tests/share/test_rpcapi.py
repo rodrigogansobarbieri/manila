@@ -233,28 +233,37 @@ class ShareRpcAPITestCase(test.TestCase):
                              force_host_copy=True,
                              notify=True)
 
+    def test_get_migration_info(self):
+        self._test_share_api('get_migration_info',
+                             rpc_method='call',
+                             version='1.6',
+                             share_instance=self.fake_share)
+
+    def test_get_driver_migration_info(self):
+        self._test_share_api('get_driver_migration_info',
+                             rpc_method='call',
+                             version='1.6',
+                             share_instance=self.fake_share)
+
     def test_migration_complete(self):
         self._test_share_api('migration_complete',
                              rpc_method='cast',
                              version='1.8',
                              share=self.fake_share,
                              share_instance_id='fake_ins_id',
-                             new_share_instance_id='new_fake_ins_id',
-                             error=None)
+                             new_share_instance_id='new_fake_ins_id')
 
-    def test_get_migration_info(self):
-        self._test_share_api('get_migration_info',
+    def test_migration_cancel(self):
+        self._test_share_api('migration_cancel',
                              rpc_method='call',
-                             version='1.6',
-                             share_instance=self.fake_share,
-                             share_server=self.fake_share_server)
+                             version='1.8',
+                             share=self.fake_share)
 
-    def test_get_driver_migration_info(self):
-        self._test_share_api('get_driver_migration_info',
+    def test_migration_get_progress(self):
+        self._test_share_api('migration_get_progress',
                              rpc_method='call',
-                             version='1.6',
-                             share_instance=self.fake_share,
-                             share_server=self.fake_share_server)
+                             version='1.8',
+                             share=self.fake_share)
 
     class Desthost(object):
         host = 'fake_host'

@@ -81,10 +81,21 @@ share_opts = [
         help="Backend IP in admin network to use for mounting "
              "shares during migration."),
     cfg.StrOpt(
-        'migration_protocol_mount_command',
-        help="The command for mounting shares for this backend. Must specify"
-             "the executable and all necessary parameters for the protocol "
-             "supported. It is advisable to separate protocols per backend."),
+        'share_mount_template',
+        default='mount -t %(proto)s %(export)s %(path)s',
+        help="The template for mounting shares for this backend. Must specify"
+             "the executable with all necessary parameters for the protocol "
+             "supported. 'proto' template element may not be required if "
+             "included in the command. 'export' and 'path' template elements "
+             "are required. It is advisable to separate different commands "
+             "per backend."),
+    cfg.StrOpt(
+        'share_unmount_template',
+        default='umount %(path)s',
+        help="The template for unmounting shares for this backend. Must "
+             "specify the executable with all necessary parameters for the "
+             "protocol supported. 'path' template element is required. It is "
+             "advisable to separate different commands per backend."),
     cfg.BoolOpt(
         'migration_readonly_rules_support',
         default=True,
@@ -258,7 +269,7 @@ class ShareDriver(object):
                 {'actual': self.driver_handles_share_servers,
                  'allowed': driver_handles_share_servers})
 
-    def migrate_share(self, context, share_ref, host,
+    def migrate_share(self, context, share_ref, share_server, host,
                       dest_driver_migration_info, notify):
         """Is called to perform driver migration.
 
@@ -267,6 +278,7 @@ class ShareDriver(object):
         backend.
         :param context: The 'context.RequestContext' object for the request.
         :param share_ref: Reference to the share being migrated.
+        :param share_server: Share server model or None.
         :param host: Destination host and its capabilities.
         :param dest_driver_migration_info: Migration information provided by
         destination host.
@@ -277,7 +289,7 @@ class ShareDriver(object):
         """
         return None, None
 
-    def migration_complete(self, context, share_ref, host,
+    def migration_complete(self, context, share_ref, share_server,
                            dest_driver_migration_info):
         """Is called to perform driver migration.
 
@@ -286,48 +298,83 @@ class ShareDriver(object):
         backend.
         :param context: The 'context.RequestContext' object for the request.
         :param share_ref: Reference to the share being migrated.
-        :param host: Destination host and its capabilities.
+        :param share_server: Share server model or None.
         :param dest_driver_migration_info: Migration information provided by
         destination host.
         :returns: Dictionary containing a model update.
         """
         return None
 
-    def get_driver_migration_info(self, context, share_instance, share_server):
-        """Is called to provide necessary driver migration logic."""
+    def migration_cancel(self, context, share_ref, share_server,
+                         dest_driver_migration_info):
+        """Is called to cancel driver migration.
+
+        If possible, driver can implement a way to cancel an in-progress
+        migration.
+        :param context: The 'context.RequestContext' object for the request.
+        :param share_ref: Reference to the share being migrated.
+        :param share_server: Share server model or None.
+        :param dest_driver_migration_info: Migration information provided by
+        destination host.
+        """
+        raise NotImplementedError()
+
+    def migration_get_progress(self, context, share_ref, share_server,
+                               dest_driver_migration_info):
+        """Is called to get migration progress.
+
+        If possible, driver can implement a way to return migration progress
+        information.
+        :param context: The 'context.RequestContext' object for the request.
+        :param share_ref: Reference to the share being migrated.
+        :param share_server: Share server model or None.
+        :param dest_driver_migration_info: Migration information provided by
+        destination host.
+        :return: A dictionary with 'total_progress' field containing the
+        percentage value.
+        """
+        raise NotImplementedError()
+
+    def get_driver_migration_info(self, context, share, share_server):
+        """Is called to provide necessary driver migration logic.
+
+        :param context: The 'context.RequestContext' object for the request.
+        :param share: Reference to the share being migrated.
+        :param share_server: Share server model or None.
+        :return: A dictionary with migration information.
+        """
         return None
 
-    def get_migration_info(self, context, share_instance, share_server):
-        """Is called to provide necessary generic migration logic."""
+    def get_migration_info(self, context, share, share_server):
+        """Is called to provide necessary generic migration logic.
 
-        mount_cmd = self._get_mount_command(context, share_instance,
-                                            share_server)
+        :param context: The 'context.RequestContext' object for the request.
+        :param share: Reference to the share being migrated.
+        :param share_server: Share server model or None.
+        :return: A dictionary with migration information.
+        """
+        mount_template = self._get_mount_command(context, share, share_server)
 
-        umount_cmd = self._get_unmount_command(context, share_instance,
-                                               share_server)
+        unmount_template = self._get_unmount_command(context, share,
+                                                     share_server)
 
-        return {'mount': mount_cmd,
-                'umount': umount_cmd}
+        return {'mount': mount_template,
+                'unmount': unmount_template}
 
     def _get_mount_command(self, context, share_instance, share_server):
         """Is called to delegate mounting share logic."""
-        mount_cmd = self._get_mount_command_protocol(share_instance,
-                                                     share_server)
 
-        mount_ip = self._get_mount_ip(share_instance, share_server)
-        mount_cmd.append(mount_ip)
+        mount_template = self.configuration.safe_get('share_mount_template')
 
-        return mount_cmd
+        mount_export = self._get_mount_export(share_instance, share_server)
 
-    def _get_mount_command_protocol(self, share_instance, share_server):
-        mount_cmd = self.configuration.safe_get(
-            'migration_protocol_mount_command')
-        if mount_cmd:
-            return mount_cmd.split()
-        else:
-            return ['mount', '-t', share_instance['share_proto'].lower()]
+        format_template = {'proto': share_instance['share_proto'].lower(),
+                           'export': mount_export,
+                           'path': '%(path)s'}
 
-    def _get_mount_ip(self, share_instance, share_server):
+        return mount_template % format_template
+
+    def _get_mount_export(self, share_instance, share_server):
         # NOTE(ganso): If drivers want to override the export_location IP,
         # they can do so using this configuration. This method can also be
         # overridden if necessary.
@@ -344,7 +391,7 @@ class ShareDriver(object):
         return path
 
     def _get_unmount_command(self, context, share_instance, share_server):
-        return ['umount']
+        return self.configuration.safe_get('share_unmount_template')
 
     def create_share(self, context, share, share_server=None):
         """Is called to create share."""

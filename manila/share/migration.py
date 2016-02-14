@@ -61,9 +61,9 @@ class ShareMigrationHelper(object):
         self.migration_wait_access_rules_timeout = (
             CONF.migration_wait_access_rules_timeout)
 
-    def delete_instance_and_wait(self, context, share_instance):
+    def delete_instance_and_wait(self, share_instance):
 
-        self.api.delete_instance(context, share_instance, True)
+        self.api.delete_instance(self.context, share_instance, True)
 
         # Wait for deletion.
         starttime = time.time()
@@ -72,7 +72,7 @@ class ShareMigrationHelper(object):
         instance = "Something not None"
         while instance is not None:
             try:
-                instance = self.db.share_instance_get(context,
+                instance = self.db.share_instance_get(self.context,
                                                       share_instance['id'])
                 tries += 1
                 now = time.time()
@@ -85,16 +85,17 @@ class ShareMigrationHelper(object):
             else:
                 time.sleep(tries ** 2)
 
-    def create_instance_and_wait(self, context, share, share_instance, host):
+    def create_instance_and_wait(self, share, share_instance, host):
 
         new_share_instance = self.api.create_instance(
-            context, share, share_instance['share_network_id'], host['host'])
+            self.context, share, share_instance['share_network_id'],
+            host['host'])
 
         # Wait for new_share_instance to become ready
         starttime = time.time()
         deadline = starttime + self.migration_create_delete_share_timeout
         new_share_instance = self.db.share_instance_get(
-            context, new_share_instance['id'], with_share_data=True)
+            self.context, new_share_instance['id'], with_share_data=True)
         tries = 0
         while new_share_instance['status'] != constants.STATUS_AVAILABLE:
             tries += 1
@@ -104,23 +105,23 @@ class ShareMigrationHelper(object):
                         " (from %(share_id)s) on "
                         "destination host %(host_name)s") % {
                     'share_id': share['id'], 'host_name': host['host']}
-                self.cleanup_new_instance(context, new_share_instance)
+                self.cleanup_new_instance(new_share_instance)
                 raise exception.ShareMigrationFailed(reason=msg)
             elif now > deadline:
                 msg = _("Timeout creating new share instance "
                         "(from %(share_id)s) on "
                         "destination host %(host_name)s") % {
                     'share_id': share['id'], 'host_name': host['host']}
-                self.cleanup_new_instance(context, new_share_instance)
+                self.cleanup_new_instance(new_share_instance)
                 raise exception.ShareMigrationFailed(reason=msg)
             else:
                 time.sleep(tries ** 2)
             new_share_instance = self.db.share_instance_get(
-                context, new_share_instance['id'], with_share_data=True)
+                self.context, new_share_instance['id'], with_share_data=True)
 
         return new_share_instance
 
-    def _add_rules_and_wait(self, context, share_instance, access_rules):
+    def _add_rules_and_wait(self, share_instance, access_rules):
 
         for access in access_rules:
             values = {
@@ -135,7 +136,7 @@ class ShareMigrationHelper(object):
 
             self.db.share_access_create(self.context, values)
 
-        self.api.allow_access_to_instance(context, share_instance,
+        self.api.allow_access_to_instance(self.context, share_instance,
                                           access_rules)
         utils.wait_for_access_update(
             self.context, self.db, share_instance,
@@ -144,10 +145,10 @@ class ShareMigrationHelper(object):
     # NOTE(ganso): Cleanup methods do not throw exceptions, since the
     # exceptions that should be thrown are the ones that call the cleanup
 
-    def cleanup_new_instance(self, context, new_instance):
+    def cleanup_new_instance(self, new_instance):
 
         try:
-            self.delete_instance_and_wait(context, new_instance)
+            self.delete_instance_and_wait(new_instance)
         except Exception as e:
             msg = six.text_type(e)
             LOG.exception(msg)
@@ -211,4 +212,4 @@ class ShareMigrationHelper(object):
         rules = self.db.share_access_get_all_for_instance(
             self.context, share_instance['id'])
 
-        self._add_rules_and_wait(self.context, new_share_instance, rules)
+        self._add_rules_and_wait(new_share_instance, rules)

@@ -31,9 +31,9 @@ class DataAPI(object):
 
         1.0 - Initial version.
         1.1 - Add migrate_share(),
-              migration_cancel(),
-              migration_get_progress()
-
+              data_copy_cancel(),
+              data_copy_get_progress()
+        1.2 - Add copy_share_data()
     """
 
     BASE_RPC_API_VERSION = '1.0'
@@ -45,7 +45,7 @@ class DataAPI(object):
         self.client = rpc.get_client(target, version_cap='1.1')
 
     def migrate_share(self, ctxt, share_id, ignore_list, share_instance_id,
-                      new_share_instance_id, migration_info_src,
+                      dest_share_instance_id, migration_info_src,
                       migration_info_dest, notify):
         cctxt = self.client.prepare(version='1.1')
         cctxt.cast(
@@ -54,15 +54,33 @@ class DataAPI(object):
             share_id=share_id,
             ignore_list=ignore_list,
             share_instance_id=share_instance_id,
-            new_share_instance_id=new_share_instance_id,
+            dest_share_instance_id=dest_share_instance_id,
             migration_info_src=migration_info_src,
             migration_info_dest=migration_info_dest,
             notify=notify)
 
-    def migration_cancel(self, ctxt, share_id):
+    def data_copy_cancel(self, ctxt, share_id):
         cctxt = self.client.prepare(version='1.1')
-        cctxt.call(ctxt, 'migration_cancel', share_id=share_id)
+        cctxt.call(ctxt, 'data_copy_cancel', share_id=share_id)
 
-    def migration_get_progress(self, ctxt, share_id):
+    def data_copy_get_progress(self, ctxt, share_id):
         cctxt = self.client.prepare(version='1.1')
-        return cctxt.call(ctxt, 'migration_get_progress', share_id=share_id)
+        return cctxt.call(ctxt, 'data_copy_get_progress', share_id=share_id)
+
+    def copy_share_data(
+            self, ctxt, src_share_id, dest_share_id, src_path, dest_path,
+            src_share_instance_id, dest_share_instance_id,
+            migration_info_src, migration_info_dest, callback):
+        cctxt = self.client.prepare(version='1.2')
+        cctxt.cast(
+            ctxt,
+            'copy_share_data',
+            src_share_id=src_share_id,
+            dest_share_id=dest_share_id,
+            src_path=src_path,
+            dest_path=dest_path,
+            src_share_instance_id=src_share_instance_id,
+            dest_share_instance_id=dest_share_instance_id,
+            migration_info_src=migration_info_src,
+            migration_info_dest=migration_info_dest,
+            callback=callback)

@@ -46,7 +46,9 @@ class ShareAPI(object):
             get_migration_info()
             get_driver_migration_info()
         1.7 - Update target call API in allow/deny access methods
-        1.8 - Add migration_complete()
+        1.8 - Add migration_complete(), migration_cancel() and
+            migration_get_progress()
+        1.9 - Add driver_data_copy_complete()
     """
 
     BASE_RPC_API_VERSION = '1.0'
@@ -99,19 +101,17 @@ class ShareAPI(object):
         cctxt.cast(ctxt, 'migrate_share', share_id=share['id'],
                    host=host_p, force_host_copy=force_host_copy, notify=notify)
 
-    def get_migration_info(self, ctxt, share_instance, share_server):
+    def get_migration_info(self, ctxt, share_instance):
         new_host = utils.extract_host(share_instance['host'])
         cctxt = self.client.prepare(server=new_host, version='1.6')
         return cctxt.call(ctxt, 'get_migration_info',
-                          share_instance_id=share_instance['id'],
-                          share_server=share_server)
+                          share_instance_id=share_instance['id'])
 
-    def get_driver_migration_info(self, ctxt, share_instance, share_server):
+    def get_driver_migration_info(self, ctxt, share_instance):
         new_host = utils.extract_host(share_instance['host'])
         cctxt = self.client.prepare(server=new_host, version='1.6')
         return cctxt.call(ctxt, 'get_driver_migration_info',
-                          share_instance_id=share_instance['id'],
-                          share_server=share_server)
+                          share_instance_id=share_instance['id'])
 
     def delete_share_server(self, ctxt, share_server):
         host = utils.extract_host(share_server['host'])
@@ -203,11 +203,40 @@ class ShareAPI(object):
             cgsnapshot_id=cgsnapshot['id'])
 
     def migration_complete(self, ctxt, share, share_instance_id,
-                           new_share_instance_id, error):
+                           new_share_instance_id):
         new_host = utils.extract_host(share['host'])
         cctxt = self.client.prepare(server=new_host, version='1.8')
         cctxt.cast(ctxt, 'migration_complete',
                    share_id=share['id'],
                    share_instance_id=share_instance_id,
-                   new_share_instance_id=new_share_instance_id,
-                   error=error)
+                   new_share_instance_id=new_share_instance_id)
+
+    def migration_cancel(self, ctxt, share):
+        new_host = utils.extract_host(share['host'])
+        cctxt = self.client.prepare(server=new_host, version='1.8')
+        cctxt.call(ctxt, 'migration_cancel', share_id=share['id'])
+
+    def migration_get_progress(self, ctxt, share):
+        new_host = utils.extract_host(share['host'])
+        cctxt = self.client.prepare(server=new_host, version='1.8')
+        return cctxt.call(ctxt, 'migration_get_progress',
+                          share_id=share['id'])
+
+    def driver_data_copy_complete(self, ctxt, share_src, share_dest, src_path,
+                                  dest_path, callback=None):
+        new_host = utils.extract_host(share_src['host'])
+        cctxt = self.client.prepare(server=new_host, version='1.9')
+        cctxt.cast(ctxt, 'driver_data_copy_complete_src',
+                   src_share_id=share_src['id'],
+                   src_path=src_path,
+                   dest_share_id=share_dest['id'],
+                   dest_path=dest_path,
+                   callback=callback)
+        new_host = utils.extract_host(share_dest['host'])
+        cctxt = self.client.prepare(server=new_host, version='1.9')
+        cctxt.cast(ctxt, 'driver_data_copy_complete_dest',
+                   src_share_id=share_src['id'],
+                   src_path=src_path,
+                   dest_share_id=share_dest['id'],
+                   dest_path=dest_path,
+                   callback=callback)

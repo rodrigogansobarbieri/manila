@@ -574,81 +574,6 @@ class API(base.Base):
         return snapshot
 
     @policy.wrap_check_policy('share')
-    def migration_get_progress(self, context, share):
-
-        policy.check_policy(context, 'share', 'migration_get_progress')
-
-        if share['task_state'] != (
-                constants.TASK_STATE_MIGRATION_COPYING_IN_PROGRESS):
-            msg = _("Migration of share %s data copy progress cannot be "
-                    "obtained at this moment.") % share['id']
-            LOG.error(msg)
-            raise exception.InvalidShare(reason=msg)
-
-        data_rpc = data_rpcapi.DataAPI()
-        LOG.info(_LI("Sending request to get share migration information"
-                 " of share %s.") % share['id'])
-        return data_rpc.migration_get_progress(context, share['id'])
-
-    @policy.wrap_check_policy('share')
-    def migration_cancel(self, context, share):
-
-        policy.check_policy(context, 'share', 'migration_cancel')
-
-        if share['task_state'] != (
-                constants.TASK_STATE_MIGRATION_COPYING_IN_PROGRESS):
-            msg = _("Data copy for migration of share %s cannot be cancelled"
-                    " at this moment.") % share['id']
-            LOG.error(msg)
-            raise exception.InvalidShare(reason=msg)
-
-        data_rpc = data_rpcapi.DataAPI()
-        LOG.info(_LI("Sending request to cancel migration of "
-                     "share %s.") % share['id'])
-        data_rpc.migration_cancel(context, share['id'])
-
-    @policy.wrap_check_policy('share')
-    def migration_complete(self, context, share):
-
-        policy.check_policy(context, 'share', 'migration_complete')
-
-        # TODO(ganso): decide if this validation should be here or in manager,
-        # since that code can be reached automatically if notify=True, may
-        # need to be validated.
-        if share['task_state'] not in (
-                constants.TASK_STATE_MIGRATION_COPYING_COMPLETED,
-                constants.TASK_STATE_MIGRATION_DRIVER_PHASE1_DONE):
-            msg = _("First migration phase of share %s not completed"
-                    " yet.") % share['id']
-            LOG.error(msg)
-            raise exception.InvalidShare(reason=msg)
-
-        share_instance_id = None
-        new_share_instance_id = None
-
-        if share['task_state'] == (
-                constants.TASK_STATE_MIGRATION_COPYING_COMPLETED):
-
-            for instance in share.instances:
-                if instance['status'] == constants.STATUS_MIGRATING:
-                    share_instance_id = instance['id']
-                if instance['status'] == constants.STATUS_MIGRATING_TO:
-                    new_share_instance_id = instance['id']
-
-            if None in (share_instance_id, new_share_instance_id):
-                msg = _("Share instances %(instance_id)s and "
-                        "%(new_instance_id)s in inconsistent states, cannot"
-                        " continue share migration for share %(share_id)s"
-                        ".") % {'instance_id': share_instance_id,
-                                'new_instance_id': new_share_instance_id,
-                                'share_id': share['id']}
-                raise exception.ShareMigrationFailed(reason=msg)
-
-        share_rpc = share_rpcapi.ShareAPI()
-        share_rpc.migration_complete(context, share, share_instance_id,
-                                     new_share_instance_id, None)
-
-    @policy.wrap_check_policy('share')
     def migrate_share(self, context, share, host, force_host_copy,
                       notify=True):
         """Migrates share to a new host."""
@@ -735,6 +660,93 @@ class API(base.Base):
                 context, share,
                 {'task_state': constants.TASK_STATE_MIGRATION_ERROR})
             raise
+
+    @policy.wrap_check_policy('share')
+    def migration_complete(self, context, share):
+
+        policy.check_policy(context, 'share', 'migration_complete')
+
+        if share['task_state'] not in (
+                constants.TASK_STATE_DATA_COPYING_COMPLETED,
+                constants.TASK_STATE_MIGRATION_DRIVER_PHASE1_DONE):
+            msg = _("First migration phase of share %s not completed"
+                    " yet.") % share['id']
+            LOG.error(msg)
+            raise exception.InvalidShare(reason=msg)
+
+        share_instance_id = None
+        new_share_instance_id = None
+
+        if share['task_state'] == (
+                constants.TASK_STATE_DATA_COPYING_COMPLETED):
+
+            for instance in share.instances:
+                if instance['status'] == constants.STATUS_MIGRATING:
+                    share_instance_id = instance['id']
+                if instance['status'] == constants.STATUS_MIGRATING_TO:
+                    new_share_instance_id = instance['id']
+
+            if None in (share_instance_id, new_share_instance_id):
+                msg = _("Share instances %(instance_id)s and "
+                        "%(new_instance_id)s in inconsistent states, cannot"
+                        " continue share migration for share %(share_id)s"
+                        ".") % {'instance_id': share_instance_id,
+                                'new_instance_id': new_share_instance_id,
+                                'share_id': share['id']}
+                raise exception.ShareMigrationFailed(reason=msg)
+
+        share_rpc = share_rpcapi.ShareAPI()
+        share_rpc.migration_complete(context, share, share_instance_id,
+                                     new_share_instance_id)
+
+    @policy.wrap_check_policy('share')
+    def migration_get_progress(self, context, share):
+
+        policy.check_policy(context, 'share', 'migration_get_progress')
+
+        if share['task_state'] == (
+                constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS):
+
+            share_rpc = share_rpcapi.ShareAPI()
+            return share_rpc.migration_get_progress(context, share)
+
+        elif share['task_state'] == (
+                constants.TASK_STATE_DATA_COPYING_IN_PROGRESS):
+            data_rpc = data_rpcapi.DataAPI()
+            LOG.info(_LI("Sending request to get share migration information"
+                     " of share %s.") % share['id'])
+            return data_rpc.data_copy_get_progress(context, share['id'])
+
+        else:
+            msg = _("Migration of share %s data copy progress cannot be "
+                    "obtained at this moment.") % share['id']
+            LOG.error(msg)
+            raise exception.InvalidShare(reason=msg)
+
+    @policy.wrap_check_policy('share')
+    def migration_cancel(self, context, share):
+
+        policy.check_policy(context, 'share', 'migration_cancel')
+
+        if share['task_state'] == (
+                constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS):
+
+            share_rpc = share_rpcapi.ShareAPI()
+            share_rpc.migration_cancel(context, share)
+
+        elif share['task_state'] == (
+                constants.TASK_STATE_DATA_COPYING_IN_PROGRESS):
+
+            data_rpc = data_rpcapi.DataAPI()
+            LOG.info(_LI("Sending request to cancel migration of "
+                         "share %s.") % share['id'])
+            data_rpc.data_copy_cancel(context, share['id'])
+
+        else:
+            msg = _("Data copy for migration of share %s cannot be cancelled"
+                    " at this moment.") % share['id']
+            LOG.error(msg)
+            raise exception.InvalidShare(reason=msg)
 
     @policy.wrap_check_policy('share')
     def delete_snapshot(self, context, snapshot, force=False):
