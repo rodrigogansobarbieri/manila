@@ -17,6 +17,7 @@ from oslo_log import log as logging
 from tempest import config  # noqa
 from tempest import test  # noqa
 from tempest_lib.common.utils import data_utils
+from tempest_lib import decorators
 from tempest_lib import exceptions
 
 from manila_tempest_tests.tests.scenario import manager_share as manager
@@ -173,7 +174,8 @@ class ShareBasicOpsBase(manager.ShareScenarioTest):
         self.security_group = self._create_security_group()
         self.create_share()
         instance = self.boot_instance()
-        self.allow_access_ip(self.share['id'], instance=instance)
+        self.allow_access_ip(self.share['id'], instance=instance,
+                             cleanup=False)
         ssh_client = self.init_ssh(instance)
         for location in self.share['export_locations']:
             self.mount_share(location, ssh_client)
@@ -189,7 +191,8 @@ class ShareBasicOpsBase(manager.ShareScenarioTest):
 
         # boot first VM and write data
         instance1 = self.boot_instance()
-        self.allow_access_ip(self.share['id'], instance=instance1)
+        self.allow_access_ip(self.share['id'], instance=instance1,
+                             cleanup=False)
         ssh_client_inst1 = self.init_ssh(instance1)
 
         # TODO(vponomaryov): use separate API for getting export location for
@@ -211,6 +214,7 @@ class ShareBasicOpsBase(manager.ShareScenarioTest):
         self.assertEqual(test_data, data)
 
     @test.services('compute', 'network')
+    @decorators.skip_because(bug="1546946")
     def test_migration_files(self):
 
         if self.protocol == "CIFS":
