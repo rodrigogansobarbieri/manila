@@ -114,19 +114,20 @@ if [[ "$MULTITENANCY_ENABLED" == "False"  ]]; then
     # volume creation in Cinder using Generic driver. So, reduce amount of
     # threads to avoid errors for Cinder volume creations that appear
     # because of lack of free space.
-    MANILA_TEMPEST_CONCURRENCY=${MANILA_TEMPEST_CONCURRENCY:-8}
+    MANILA_TEMPEST_CONCURRENCY=${MANILA_TEMPEST_CONCURRENCY:-3}
 fi
 
 # let us control if we die or not
 set +o errexit
 cd $BASE/new/tempest
 
-export MANILA_TEMPEST_CONCURRENCY=${MANILA_TEMPEST_CONCURRENCY:-20}
+export MANILA_TEMPEST_CONCURRENCY=${MANILA_TEMPEST_CONCURRENCY:-3}
 export MANILA_TESTS=${MANILA_TESTS:-'manila_tempest_tests.tests.api'}
 
 if [[ "$TEST_TYPE" == "scenario" ]]; then
     echo "Set test set to scenario only"
     MANILA_TESTS='manila_tempest_tests.tests.scenario'
+    MANILA_TEMPEST_CONCURRENCY=3
 elif [[ "$DRIVER" == "generic" ]]; then
     if [[ "$POSTGRES_ENABLED" == "True" ]]; then
         # Run only CIFS tests on PostgreSQL DB backend
@@ -140,7 +141,7 @@ elif [[ "$DRIVER" == "generic" ]]; then
 fi
 
 if [[ "$DRIVER" == "lvm"  ]]; then
-    MANILA_TEMPEST_CONCURRENCY=8
+    MANILA_TEMPEST_CONCURRENCY=3
     RUN_MANILA_CG_TESTS=False
     RUN_MANILA_MANAGE_TESTS=False
     iniset $TEMPEST_CONFIG share run_shrink_tests False
