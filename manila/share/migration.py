@@ -151,7 +151,7 @@ class ShareMigrationHelper(object):
             else:
                 time.sleep(tries ** 2)
 
-    def _allow_access_to_instance(self, access, share_instance):
+    def allow_migration_access(self, access, share_instance):
 
         values = {
             'share_id': self.share['id'],
@@ -172,31 +172,11 @@ class ShareMigrationHelper(object):
         self.api.allow_access_to_instance(
             self.context, share_instance, access_ref)
 
-        return access_ref
-
-    def allow_migration_access(self, access, share_instance):
-        access_ref = None
-        try:
-            access_ref = self._allow_access_to_instance(access, share_instance)
-        except exception.ShareAccessExists:
-            LOG.warning(_LW("Access rule already allowed. "
-                            "Access %(access_to)s - Share "
-                            "%(share_id)s") % {
-                                'access_to': access['access_to'],
-                                'share_id': self.share['id']})
-            access_list = self.api.access_get_all(self.context, self.share)
-            for access_item in access_list:
-                if access_item['access_to'] == access['access_to']:
-                    access_ref = access_item
-
-        if access_ref:
-            self.wait_for_access_update(share_instance)
+        self.wait_for_access_update(share_instance)
 
         return access_ref
 
-    def deny_migration_access(self, access_ref, access, share_instance,
-                              throw_not_found=True):
-        denied = False
+    def deny_migration_access(self, access_ref, access, share_instance):
         if access_ref:
             try:
                 # Update status
@@ -216,22 +196,9 @@ class ShareMigrationHelper(object):
                     access_ref = access_item
                     break
         if access_ref:
-            try:
-                self.api.deny_access_to_instance(
-                    self.context, share_instance, access_ref)
-                denied = True
-            except (exception.InvalidShareAccess, exception.NotFound) as e:
-                LOG.exception(six.text_type(e))
-                LOG.warning(_LW("Access rule not found. "
-                                "Access %(access_to)s - Share "
-                                "%(share_id)s") % {
-                                    'access_to': access['access_to'],
-                                    'share_id': self.share['id']})
-                if throw_not_found:
-                    raise
-
-            if denied:
-                self.wait_for_access_update(share_instance)
+            self.api.deny_access_to_instance(
+                self.context, share_instance, access_ref)
+            self.wait_for_access_update(share_instance)
 
     # NOTE(ganso): Cleanup methods do not throw exception, since the
     # exceptions that should be thrown are the ones that call the cleanup

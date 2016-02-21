@@ -57,7 +57,7 @@ class ShareMigrationHelperTestCase(test.TestCase):
         self.mock_object(time, 'sleep')
 
         self.helper.deny_rules_and_wait(
-            self.context, self.share, saved_rules)
+            self.context, self.share.instance, saved_rules)
 
         db.share_instance_get.assert_any_call(
             self.context, self.share.instance['id'])
@@ -73,7 +73,7 @@ class ShareMigrationHelperTestCase(test.TestCase):
         self.mock_object(self.helper, 'wait_for_access_update')
         self.mock_object(db, 'share_access_create')
 
-        self.helper.add_rules_and_wait(self.context, self.share,
+        self.helper.add_rules_and_wait(self.context, self.share.instance,
                                        fake_access_rules)
 
         share_api.API.allow_access_to_instance.assert_called_once_with(
@@ -254,10 +254,11 @@ class ShareMigrationHelperTestCase(test.TestCase):
         self.mock_object(self.helper, 'wait_for_access_update',
                          mock.Mock(return_value=access_active))
 
-        self.mock_object(self.helper.api, 'allow_access',
+        self.mock_object(self.helper.api, 'allow_access_to_instance',
                          mock.Mock(return_value=access_active))
 
-        result = self.helper.allow_migration_access(access)
+        result = self.helper.allow_migration_access(
+            access, self.share.instance)
 
         self.assertEqual(access_active, result)
 
@@ -272,13 +273,14 @@ class ShareMigrationHelperTestCase(test.TestCase):
                                                access_to='fake_ip')
 
         self.mock_object(
-            self.helper.api, 'allow_access',
+            self.helper.api, 'allow_access_to_instance',
             mock.Mock(side_effect=[exception.ShareAccessExists('fake')]))
 
         self.mock_object(self.helper.api, 'access_get_all',
                          mock.Mock(return_value=[access_active]))
 
-        result = self.helper.allow_migration_access(access)
+        result = self.helper.allow_migration_access(
+            access, self.share.instance)
 
         self.assertEqual(access_active, result)
 
@@ -293,11 +295,12 @@ class ShareMigrationHelperTestCase(test.TestCase):
         self.mock_object(self.helper.api, 'access_get',
                          mock.Mock(return_value=access_active))
 
-        self.mock_object(self.helper.api, 'deny_access')
+        self.mock_object(self.helper.api, 'deny_access_to_instance')
 
         self.mock_object(self.helper, 'wait_for_access_update')
 
-        self.helper.deny_migration_access(access_active, access)
+        self.helper.deny_migration_access(access_active, access,
+                                          self.share.instance)
 
         self.helper.wait_for_access_update.assert_called_once_with(
             self.share.instance
@@ -314,7 +317,8 @@ class ShareMigrationHelperTestCase(test.TestCase):
         self.mock_object(self.helper.api, 'access_get',
                          mock.Mock(side_effect=exception.NotFound('fake')))
 
-        self.helper.deny_migration_access(access_active, access)
+        self.helper.deny_migration_access(
+            access_active, access, self.share.instance)
 
     def test_deny_migration_access_none(self):
 
@@ -327,11 +331,11 @@ class ShareMigrationHelperTestCase(test.TestCase):
         self.mock_object(self.helper.api, 'access_get_all',
                          mock.Mock(return_value=[access_active]))
 
-        self.mock_object(self.helper.api, 'deny_access')
+        self.mock_object(self.helper.api, 'deny_access_to_instance')
 
         self.mock_object(self.helper, 'wait_for_access_update')
 
-        self.helper.deny_migration_access(None, access)
+        self.helper.deny_migration_access(None, access, self.share.instance)
 
         self.helper.wait_for_access_update.assert_called_once_with(
             self.share.instance)
@@ -347,19 +351,19 @@ class ShareMigrationHelperTestCase(test.TestCase):
         self.mock_object(self.helper.api, 'access_get',
                          mock.Mock(return_value=access_active))
 
-        self.mock_object(self.helper.api, 'deny_access',
+        self.mock_object(self.helper.api, 'deny_access_to_instance',
                          mock.Mock(side_effect=[exception.NotFound('fake')]))
 
         self.assertRaises(exception.NotFound,
                           self.helper.deny_migration_access, access_active,
-                          access)
+                          access, self.share.instance)
 
     def test_cleanup_migration_access_exception(self):
 
         self.mock_object(self.helper, 'deny_migration_access',
                          mock.Mock(side_effect=Exception('fake')))
 
-        self.helper.cleanup_migration_access(None, None)
+        self.helper.cleanup_migration_access(None, None, self.share.instance)
 
     def test_cleanup_temp_folder_exception(self):
 

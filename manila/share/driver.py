@@ -429,10 +429,8 @@ class ShareDriver(object):
 
         # NOTE(ganso): Removing any previously conflicting access rules, which
         # would cause the following access_allow to fail for one instance.
-        helper.deny_migration_access(
-            None, src_access, share_instance, False)
-        helper.deny_migration_access(
-            None, dest_access, new_share_instance, False)
+        helper.deny_migration_access(None, src_access, share_instance)
+        helper.deny_migration_access(None, dest_access, new_share_instance)
 
         # NOTE(ganso): I would rather allow access to instances separately,
         # but I require an access_id since it is a new access rule and
