@@ -105,7 +105,7 @@ class CopyUtils(object):
         while True:
             line = self.process.stdout.readline()
             LOG.debug("Received output from copy process: %s", line)
-            if line is not None and line != '':
+            if line is not None and line != '' and len(line) > 3:
                 progress = json.loads(line)
                 self.current_copy = progress['current_copy']
                 self.current_size = progress['current_size']

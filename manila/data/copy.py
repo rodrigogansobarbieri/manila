@@ -42,6 +42,7 @@ class Copy(object):
                     os.mkdir(dest_dir)
                     stat = os.stat(src_dir)
                     os.chown(dest_dir, stat.st_uid, stat.st_gid)
+                    print("e5")
 
             for filename in filenames:
                 if filename not in self.ignore_list:
@@ -50,20 +51,28 @@ class Copy(object):
                     dest_file = src_file.replace(self.src, self.dest)
                     self.current_copy = {'file_path': dest_file,
                                          'size': size}
+                    print("f6")
                     return_code = subprocess.call(
                         ["cp", "-d", "--preserve=all", src_file, dest_file])
+                    print("g7")
                     if return_code != 0:
+                        print("h8")
                         sys.exit("Could not copy file %s." % src_file)
+                    print("i9")
                     self.current_size += size
                     output = json.dumps({'current_copy': self.current_copy,
                                          'current_size': self.current_size})
                     print(output)
 
+print("a1")
 try:
     args_json = sys.argv[1]
     args = json.loads(args_json)
+    print("b2")
     copy = Copy(args['src'], args['dest'], args['ignore_list'])
     copy.run()
 except Exception as e:
+    print("c3")
     sys.exit(e)
+print("d4")
 sys.exit(0)
