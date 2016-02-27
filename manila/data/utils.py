@@ -113,6 +113,8 @@ class CopyUtils(object):
             else:
                 break
 
+        LOG.debug("Copy process return code: %s", self.process.returncode)
+
     def _get_total_size(self):
 
         for dirpath, dirnames, filenames in os.walk(self.src):
