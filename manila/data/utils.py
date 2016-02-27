@@ -97,11 +97,14 @@ class CopyUtils(object):
         cmd = shlex.split(root_helper) + list(cmd)
         _PIPE = subprocess.PIPE  # pylint: disable=E1101
 
+        LOG.debug("Starting copy process: %s", six.text_type(cmd))
+
         self.process = subprocess.Popen(
             cmd, stdin=_PIPE, stdout=_PIPE, stderr=_PIPE)
 
         while True:
             line = self.process.stdout.readline()
+            LOG.debug("Received output from copy process: %s", line)
             if line is not None and line != '':
                 progress = json.loads(line)
                 self.current_copy = progress['current_copy']
@@ -124,3 +127,6 @@ class CopyUtils(object):
                     src_file = os.path.join(dirpath, filename)
                     size = os.stat(src_file).st_size
                     self.total_size += size
+
+        LOG.debug("Total size of %(src)s is %(size)s.",
+                  {'src': self.src, 'size': self.total_size})
