@@ -93,7 +93,7 @@ class CopyUtils(object):
         }
         args = json.dumps(args_json)
         root_helper = utils._get_root_helper()
-        cmd = ("python", "copy.py", args)
+        cmd = ("python", "/opt/stack/manila/manila/data/copy.py", args)
         cmd = shlex.split(root_helper) + list(cmd)
         _PIPE = subprocess.PIPE  # pylint: disable=E1101
 
@@ -125,6 +125,9 @@ class CopyUtils(object):
                     return
                 if filename not in self.ignore_list:
                     src_file = os.path.join(dirpath, filename)
+
+                    LOG.debug("Checking size of file %s", src_file)
+
                     size = os.stat(src_file).st_size
                     self.total_size += size
 
