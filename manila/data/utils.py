@@ -12,36 +12,45 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import json
 import os
-import shutil
 import time
 
-from oslo_log import log
+import shlex
 import six
+
+from oslo_log import log
+from oslo_utils import importutils
+from manila.i18n import _LI
+from manila import utils
+
+eventlet = importutils.try_import('eventlet')
+if eventlet and eventlet.patcher.is_monkey_patched(time):
+    from eventlet.green import subprocess
+else:
+    import subprocess
 
 LOG = log.getLogger(__name__)
 
 
-class Copy(object):
+class CopyUtils(object):
 
     def __init__(self, src, dest, ignore_list):
         self.src = src
         self.dest = dest
         self.total_size = 0
+        self.cancelled = False
         self.current_size = 0
-        self.files = []
-        self.dirs = []
         self.current_copy = None
         self.ignore_list = ignore_list
-        self.cancelled = False
+        self.process = None
 
     def get_progress(self):
 
         if self.current_copy is not None:
 
             try:
-                (mode, ino, dev, nlink, uid, gid, size, atime, mtime,
-                 ctime) = os.stat(self.current_copy['file_path'])
+                size = os.stat(self.current_copy['file_path']).st_size
 
             except OSError:
                 size = 0
@@ -67,71 +76,51 @@ class Copy(object):
     def cancel(self):
 
         self.cancelled = True
+        if self.process is not None:
+            self.process.kill()
 
     def run(self):
 
-        self.explore(self.src)
-        self.copy(self.src, self.dest)
+        self._get_total_size()
+        self._copy()
 
-        LOG.info((six.text_type(self.get_progress())))
+    def _copy(self):
 
-    def copy(self, src, dest):
+        args_json = {
+            'src': self.src,
+            'dest': self.dest,
+            'ignore_list': self.ignore_list,
+        }
+        args = json.dumps(args_json)
+        root_helper = utils._get_root_helper()
+        cmd = ("python", "copy.py", args)
+        cmd = shlex.split(root_helper) + list(cmd)
+        _PIPE = subprocess.PIPE  # pylint: disable=E1101
 
-        # Create dirs with max permissions so files can be copied
-        for dir_item in self.dirs:
-            if self.cancelled:
-                return
-            new_dir = dir_item['name'].replace(src, dest)
-            os.mkdir(new_dir)
+        self.process = subprocess.Popen(
+            cmd, stdin=_PIPE, stdout=_PIPE, stderr=_PIPE)
 
-        for file_item in self.files:
-            if self.cancelled:
-                return
+        while True:
+            line = self.process.stdout.readline()
+            if line is not None and line != '':
+                progress = json.loads(line)
+                self.current_copy = progress['current_copy']
+                self.current_size = progress['current_size']
+                LOG.info(_LI(six.text_type(self.get_progress())))
             else:
-                # NOTE(ganso): sleep in order to allow data service to receive
-                #  and reply concurrent requests
-                time.sleep(0.01)
-            file_path = file_item['name'].replace(src, dest)
-            self.current_copy = {'file_path': file_path,
-                                 'size': file_item['attr']}
+                break
 
-            LOG.info(six.text_type(self.get_progress()))
+    def _get_total_size(self):
 
-            shutil.copy2(file_item['name'],
-                         file_item['name'].replace(src, dest))
-            self.current_size += file_item['attr']
+        for dirpath, dirnames, filenames in os.walk(self.src):
 
-        # Set permissions to dirs
-        for dir_item in self.dirs:
             if self.cancelled:
                 return
-
-            new_dir = dir_item['name'].replace(src, dest)
-            shutil.copystat(dir_item['name'], new_dir)
-
-    def explore(self, path):
-
-        for dirpath, dirnames, filenames in os.walk(path):
-            if self.cancelled:
-                return
-
-            for dirname in dirnames:
-                if self.cancelled:
-                    return
-                if dirname not in self.ignore_list:
-                    dir_item = os.path.join(dirpath, dirname)
-                    (mode, ino, dev, nlink, uid, gid, size, atime, mtime,
-                     ctime) = os.stat(dir_item)
-                    self.dirs.append({'name': dir_item,
-                                      'attr': mode})
 
             for filename in filenames:
                 if self.cancelled:
                     return
                 if filename not in self.ignore_list:
-                    file_item = os.path.join(dirpath, filename)
-                    (mode, ino, dev, nlink, uid, gid, size, atime, mtime,
-                     ctime) = os.stat(file_item)
-                    self.files.append({'name': file_item,
-                                       'attr': size})
+                    src_file = os.path.join(dirpath, filename)
+                    size = os.stat(src_file).st_size
                     self.total_size += size

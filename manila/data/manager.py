@@ -79,7 +79,7 @@ class DataManager(manager.Manager):
         mount_path = CONF.migration_tmp_location
 
         try:
-            copy = data_utils.Copy(
+            copy = data_utils.CopyUtils(
                 os.path.join(mount_path, share_instance_id),
                 os.path.join(mount_path, dest_share_instance_id),
                 ignore_list)
