@@ -15,6 +15,7 @@
 import json
 import os
 import time
+import subprocess
 
 import shlex
 import six
@@ -24,11 +25,11 @@ from oslo_utils import importutils
 from manila.i18n import _LI
 from manila import utils
 
-eventlet = importutils.try_import('eventlet')
-if eventlet and eventlet.patcher.is_monkey_patched(time):
-    from eventlet.green import subprocess
-else:
-    import subprocess
+#eventlet = importutils.try_import('eventlet')
+#if eventlet and eventlet.patcher.is_monkey_patched(time):
+#    from eventlet.green import subprocess
+#else:
+#    import subprocess
 
 LOG = log.getLogger(__name__)
 
@@ -100,7 +101,7 @@ class CopyUtils(object):
         LOG.debug("Starting copy process: %s", six.text_type(cmd))
 
         self.process = subprocess.Popen(
-            cmd, stdin=_PIPE, stdout=_PIPE, stderr=_PIPE)
+            cmd, stdin=_PIPE, stdout=_PIPE, stderr=_PIPE, shell=True)
 
         while True:
             line = self.process.stdout.readline()
@@ -114,6 +115,11 @@ class CopyUtils(object):
                 break
 
         LOG.debug("Copy process return code: %s", self.process.returncode)
+        LOG.debug("Copy process stdout: %s", self.process.stdout.readall())
+        LOG.debug("Copy process stderr: %s", self.process.stderr.readall())
+
+        if self.process.returncode != 0:
+            raise Exception("Copy failed.")
 
     def _get_total_size(self):
 
