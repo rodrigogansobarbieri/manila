@@ -75,7 +75,7 @@ class Copy(object):
         self.get_total_size(self.src)
         self.copy_data(self.src)
 
-        LOG.info((six.text_type(self.get_progress())))
+        LOG.info(six.text_type(self.get_progress()))
 
     def get_total_size(self, path):
         if self.cancelled:

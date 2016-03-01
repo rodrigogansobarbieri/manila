@@ -74,13 +74,11 @@ class SchedulerAPI(object):
                                  filter_properties=None):
         request_spec_p = jsonutils.to_primitive(request_spec)
         call_context = self.client.prepare(version='1.3')
-        return call_context.cast(
-            context,
-            'create_consistency_group',
-            cg_id=cg_id,
-            request_spec=request_spec_p,
-            filter_properties=filter_properties,
-        )
+        return call_context.cast(context,
+                                 'create_consistency_group',
+                                 cg_id=cg_id,
+                                 request_spec=request_spec_p,
+                                 filter_properties=filter_properties)
 
     def migrate_share_to_host(self, context, share_id, host,
                               force_host_copy, notify, request_spec=None,

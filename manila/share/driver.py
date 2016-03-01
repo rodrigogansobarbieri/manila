@@ -304,7 +304,7 @@ class ShareDriver(object):
 
     def migration_start(self, context, share_ref, share_server, host,
                         dest_driver_migration_info, notify):
-        """Is called to perform driver migration.
+        """Is called to perform 1st phase of driver migration of a given share.
 
         Driver should implement this method if willing to perform migration
         in an optimized way, useful for when driver understands destination
@@ -316,7 +316,8 @@ class ShareDriver(object):
         :param dest_driver_migration_info: Migration information provided by
         destination host.
         :param notify: whether the migration should complete or wait for
-        2nd phase call.
+        2nd phase call. Driver may throw exception when validating this
+        parameter, exception if does not support 1-phase or 2-phase approach.
         :returns: Boolean value indicating if driver migration succeeded.
         :returns: Dictionary containing a model update.
         """
@@ -324,11 +325,11 @@ class ShareDriver(object):
 
     def migration_complete(self, context, share_ref, share_server,
                            dest_driver_migration_info):
-        """Is called to perform driver migration.
+        """Is called to perform 2nd phase of driver migration of a given share.
 
-        Driver should implement this method if willing to perform migration
-        in an optimized way, useful for when driver understands destination
-        backend.
+        If driver is implementing 2-phase migration, this method should
+        perform tasks related to the 2nd phase of migration, thus completing
+        it.
         :param context: The 'context.RequestContext' object for the request.
         :param share_ref: Reference to the share being migrated.
         :param share_server: Share server model or None.

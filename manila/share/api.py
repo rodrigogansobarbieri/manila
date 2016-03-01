@@ -831,7 +831,7 @@ class API(base.Base):
                                                         host, force_host_copy,
                                                         notify, request_spec)
         except Exception:
-            msg = _('Destination host %(dest_host)s could not be validated '
+            msg = _('Destination host %(dest_host)s did not pass validation '
                     'for migration of share %(share)s.') % {
                 'dest_host': host,
                 'share': share['id']}
@@ -1066,7 +1066,7 @@ class API(base.Base):
         """Allow access to share."""
         policy.check_policy(ctx, 'share', 'allow_access')
         share = self.db.share_get(ctx, share['id'])
-        if share['status'] not in constants.STATUS_AVAILABLE:
+        if share['status'] != constants.STATUS_AVAILABLE:
             msg = _("Share status must be %s") % constants.STATUS_AVAILABLE
             raise exception.InvalidShare(reason=msg)
         values = {

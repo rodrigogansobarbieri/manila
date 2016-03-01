@@ -611,6 +611,11 @@ class ShareManager(manager.SchedulerDependentManager):
 
                 LOG.debug("Calling driver migration for share %s.", share_id)
 
+                self.db.share_update(
+                    context, share_id,
+                    {'task_state': (
+                        constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS)})
+
                 moved, model_update = self.driver.migration_start(
                     context, share_instance, share_server, host,
                     dest_driver_migration_info, notify)

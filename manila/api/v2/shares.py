@@ -82,7 +82,7 @@ class ShareController(shares.ShareMixin,
     @wsgi.action("migration_start")
     @wsgi.Controller.authorize
     def migration_start(self, req, id, body):
-        return self._migration_start(req, id, body, do_notify=True)
+        return self._migration_start(req, id, body, check_notify=True)
 
     @wsgi.Controller.api_version('2.13', experimental=True)
     @wsgi.action("migration_complete")

@@ -98,7 +98,7 @@ class ShareMixin(object):
 
         return webob.Response(status_int=202)
 
-    def _migration_start(self, req, id, body, do_notify=False):
+    def _migration_start(self, req, id, body, check_notify=False):
         """Migrate a share to the specified host."""
         context = req.environ['manila.context']
         try:
@@ -121,7 +121,7 @@ class ShareMixin(object):
             msg = _("Invalid value %s for 'force_host_copy'. "
                     "Expecting a boolean.") % force_host_copy
             raise exc.HTTPBadRequest(explanation=msg)
-        if do_notify:
+        if check_notify:
             notify = params.get('notify', True)
             try:
                 notify = strutils.bool_from_string(notify, strict=True)

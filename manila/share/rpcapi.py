@@ -122,20 +122,25 @@ class ShareAPI(object):
         call_context = self.client.prepare(server=new_host, version='1.6')
         host_p = {'host': dest_host.host,
                   'capabilities': dest_host.capabilities}
-        call_context.cast(context, 'migration_start', share_id=share['id'],
-                          host=host_p, force_host_copy=force_host_copy,
+        call_context.cast(context,
+                          'migration_start',
+                          share_id=share['id'],
+                          host=host_p,
+                          force_host_copy=force_host_copy,
                           notify=notify)
 
     def migration_get_info(self, context, share_instance):
         new_host = utils.extract_host(share_instance['host'])
         call_context = self.client.prepare(server=new_host, version='1.6')
-        return call_context.call(context, 'migration_get_info',
+        return call_context.call(context,
+                                 'migration_get_info',
                                  share_instance_id=share_instance['id'])
 
     def migration_get_driver_info(self, context, share_instance):
         new_host = utils.extract_host(share_instance['host'])
         call_context = self.client.prepare(server=new_host, version='1.6')
-        return call_context.call(context, 'migration_get_driver_info',
+        return call_context.call(context,
+                                 'migration_get_driver_info',
                                  share_instance_id=share_instance['id'])
 
     def delete_share_server(self, context, share_server):
@@ -273,7 +278,8 @@ class ShareAPI(object):
                            new_share_instance_id):
         new_host = utils.extract_host(share['host'])
         call_context = self.client.prepare(server=new_host, version='1.10')
-        call_context.cast(context, 'migration_complete',
+        call_context.cast(context,
+                          'migration_complete',
                           share_id=share['id'],
                           share_instance_id=share_instance_id,
                           new_share_instance_id=new_share_instance_id)
@@ -286,5 +292,6 @@ class ShareAPI(object):
     def migration_get_progress(self, context, share):
         new_host = utils.extract_host(share['host'])
         call_context = self.client.prepare(server=new_host, version='1.10')
-        return call_context.call(context, 'migration_get_progress',
+        return call_context.call(context,
+                                 'migration_get_progress',
                                  share_id=share['id'])
