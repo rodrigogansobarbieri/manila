@@ -272,7 +272,7 @@ class CopyClassTestCase(test.TestCase):
                 "chown",
                 "--reference=%s" % os.path.join(self._copy.src, "folder1/"),
                 os.path.join(self._copy.dest, "folder1/"),
-                run_as_root=True, check_exit_code=False),
+                run_as_root=True),
         ])
 
     def test_copy_stats_cancelled_1(self):
@@ -311,6 +311,7 @@ class CopyClassTestCase(test.TestCase):
         # mocks
         self.mock_object(self._copy, 'get_total_size')
         self.mock_object(self._copy, 'copy_data')
+        self.mock_object(self._copy, 'copy_stats')
         self.mock_object(self._copy, 'get_progress')
 
         # run
@@ -320,4 +321,5 @@ class CopyClassTestCase(test.TestCase):
         self.assertTrue(data_utils.LOG.info.called)
         self._copy.get_total_size.assert_called_once_with(self._copy.src)
         self._copy.copy_data.assert_called_once_with(self._copy.src)
+        self._copy.copy_stats.assert_called_once_with(self._copy.src)
         self._copy.get_progress.assert_called_once_with()

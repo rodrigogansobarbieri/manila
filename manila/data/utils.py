@@ -73,6 +73,7 @@ class Copy(object):
 
         self.get_total_size(self.src)
         self.copy_data(self.src)
+        self.copy_stats(self.src)
 
         LOG.info(six.text_type(self.get_progress()))
 
@@ -156,8 +157,5 @@ class Copy(object):
                               run_as_root=True)
                 utils.execute("touch", "--reference=%s" % src_item, dest_item,
                               run_as_root=True)
-                # NOTE(ganso): Command below need no_root_squash option in ACL,
-                # for NFS shares. Setting check_exit_code=False to not break
-                # existing drivers using this.
                 utils.execute("chown", "--reference=%s" % src_item, dest_item,
-                              run_as_root=True, check_exit_code=False)
+                              run_as_root=True)
