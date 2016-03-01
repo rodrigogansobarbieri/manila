@@ -1927,7 +1927,7 @@ class HuaweiShareDriverTestCase(test.TestCase):
         self.assertTrue(db.share_type_get.called)
         self.assertTrue(self.driver.plugin.
                         _get_access_id.called)
-        self.assertEqual(7, utils.execute.call_count)
+        self.assertEqual(6, utils.execute.call_count)
         self.assertEqual("\\\\100.115.10.68\\share_fake_uuid", location)
 
     def test_create_share_from_snapshot_nonefs(self):

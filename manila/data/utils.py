@@ -74,7 +74,6 @@ class Copy(object):
 
         self.get_total_size(self.src)
         self.copy_data(self.src)
-        self.copy_stats(self.src)
 
         LOG.info((six.text_type(self.get_progress())))
 
@@ -129,39 +128,9 @@ class Copy(object):
                 self.current_copy = {'file_path': dest_item,
                                      'size': int(size)}
 
-                utils.execute("cp", "-d", src_item, dest_item,
-                              run_as_root=self.copy_as_root)
+                utils.execute("cp", "-P", "--preserve=all", src_item,
+                              dest_item, run_as_root=self.copy_as_root)
 
                 self.current_size += int(size)
 
                 LOG.info(six.text_type(self.get_progress()))
-
-    def copy_stats(self, path):
-        if self.cancelled:
-            return
-        out, err = utils.execute(
-            "ls", "-pA1", "--group-directories-first", path,
-            run_as_root=self.copy_as_root)
-        for line in out.split('\n'):
-            if self.cancelled:
-                return
-            if len(line) == 0:
-                continue
-            src_item = os.path.join(path, line)
-            dest_item = src_item.replace(self.src, self.dest)
-            if line[-1] == '/':
-                if line[0:-1] in self.ignore_list:
-                    continue
-                self.copy_stats(src_item)
-            else:
-                if line in self.ignore_list:
-                    continue
-            utils.execute("chmod", "--reference=%s" % src_item, dest_item,
-                          run_as_root=self.copy_as_root)
-            utils.execute("touch", "--reference=%s" % src_item, dest_item,
-                          run_as_root=self.copy_as_root)
-            # NOTE(ganso): Command below need no_root_squash option in ACL,
-            # for NFS shares. Setting check_exit_code=False to not break
-            # existing drivers using this.
-            utils.execute("chown", "--reference=%s" % src_item, dest_item,
-                          run_as_root=self.copy_as_root, check_exit_code=False)
