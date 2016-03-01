@@ -22,7 +22,7 @@ from oslo_log import log
 from manila.common import constants
 from manila import exception
 from manila.i18n import _
-from manila.i18n import _LE
+from manila.i18n import _LW
 from manila.share import api as share_api
 import manila.utils as utils
 
@@ -149,15 +149,15 @@ class ShareMigrationHelper(object):
         try:
             self.delete_instance_and_wait(new_instance)
         except Exception:
-            LOG.exception(_LE("Failed to cleanup new instance during generic"
-                          " migration for share %s."), self.share['id'])
+            LOG.warning(_LW("Failed to cleanup new instance during generic"
+                        " migration for share %s."), self.share['id'])
 
     def cleanup_access_rules(self, share_instance, share_server, driver):
         try:
             self.revert_access_rules(share_instance, share_server, driver)
         except Exception:
-            LOG.exception(_LE("Failed to cleanup access rules during generic"
-                          " migration for share %s."), self.share['id'])
+            LOG.warning(_LW("Failed to cleanup access rules during generic"
+                        " migration for share %s."), self.share['id'])
 
     def change_to_read_only(self, share_instance, share_server,
                             readonly_support, driver):

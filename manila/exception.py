@@ -199,6 +199,12 @@ class NotFound(ManilaException):
     safe = True
 
 
+class Found(ManilaException):
+    message = _("Resource was found.")
+    code = 302
+    safe = True
+
+
 class InUse(ManilaException):
     message = _("Resource is in use.")
 

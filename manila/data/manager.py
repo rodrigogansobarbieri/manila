@@ -38,11 +38,6 @@ data_opts = [
         'migration_tmp_location',
         default='/tmp/',
         help="Temporary path to create and mount shares during migration."),
-    cfg.BoolOpt(
-        'copy_as_root',
-        default=True,
-        help="If Data Service should copy files as root or as regular "
-             "data node user."),
 ]
 
 CONF = cfg.CONF
@@ -82,13 +77,12 @@ class DataManager(manager.Manager):
         share_rpcapi = share_rpc.ShareAPI()
 
         mount_path = CONF.migration_tmp_location
-        copy_as_root = CONF.copy_as_root
 
         try:
             copy = data_utils.Copy(
                 os.path.join(mount_path, share_instance_id),
                 os.path.join(mount_path, dest_share_instance_id),
-                ignore_list, copy_as_root)
+                ignore_list)
 
             self._copy_share_data(
                 context, copy, share_ref, share_instance_id,

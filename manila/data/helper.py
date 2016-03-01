@@ -15,7 +15,6 @@
 """Helper class for Data Service operations."""
 
 import os
-import time
 
 from oslo_config import cfg
 from oslo_log import log
@@ -110,9 +109,10 @@ class DataServiceHelper(object):
     def cleanup_temp_folder(self, instance_id, mount_path):
 
         try:
-            utils.execute('rmdir', os.path.join(mount_path, instance_id),
-                          check_exit_code=False)
-
+            path = os.path.join(mount_path, instance_id)
+            if os.path.exists(path):
+                os.rmdir(path)
+            self._check_dir_not_exists(path)
         except Exception:
             LOG.warning(_LW("Could not cleanup instance %(instance_id)s "
                             "temporary folders for data copy of "
@@ -184,15 +184,24 @@ class DataServiceHelper(object):
 
         return access_ref
 
+    @utils.retry(exception.NotFound, 0.1, 10, 0.1)
+    def _check_dir_exists(self, path):
+        if not os.path.exists(path):
+            raise exception.NotFound("Folder %s could not be found." % path)
+
+    @utils.retry(exception.Found, 0.1, 10, 0.1)
+    def _check_dir_not_exists(self, path):
+        if os.path.exists(path):
+            raise exception.Found("Folder %s was found." % path)
+
     def mount_share_instance(self, mount_template, mount_path,
                              share_instance_id):
 
         path = os.path.join(mount_path, share_instance_id)
 
-        utils.execute('mkdir', '-p', path)
-        # NOTE(ganso): mkdir command sometimes returns faster than it
-        # actually runs, so we better sleep for 1 second.
-        time.sleep(1)
+        if not os.path.exists(path):
+            os.makedirs(path)
+        self._check_dir_exists(path)
 
         mount_command = mount_template % {'path': path}
 
@@ -207,4 +216,9 @@ class DataServiceHelper(object):
 
         utils.execute(*(unmount_command.split()), run_as_root=True)
 
-        utils.execute('rmdir', path, check_exit_code=False)
+        try:
+            if os.path.exists(path):
+                os.rmdir(path)
+            self._check_dir_not_exists(path)
+        except Exception:
+            LOG.warning(_LW("Folder %s could not be removed."), path)

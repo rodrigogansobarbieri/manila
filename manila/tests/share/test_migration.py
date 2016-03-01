@@ -338,7 +338,7 @@ class ShareMigrationHelperTestCase(test.TestCase):
         self.mock_object(self.helper, 'delete_instance_and_wait',
                          mock.Mock(side_effect=exc))
 
-        self.mock_object(migration.LOG, 'error')
+        self.mock_object(migration.LOG, 'warning')
 
         # run
         self.helper.cleanup_new_instance(self.share_instance)
@@ -348,7 +348,7 @@ class ShareMigrationHelperTestCase(test.TestCase):
             self.share_instance)
 
         if exc:
-            migration.LOG.error.called
+            migration.LOG.warning.called
 
     @ddt.data(None, Exception('fake'))
     def test_cleanup_access_rules(self, exc):
@@ -359,7 +359,7 @@ class ShareMigrationHelperTestCase(test.TestCase):
         self.mock_object(self.helper, 'revert_access_rules',
                          mock.Mock(side_effect=exc))
 
-        self.mock_object(migration.LOG, 'error')
+        self.mock_object(migration.LOG, 'warning')
 
         # run
         self.helper.cleanup_access_rules(self.share_instance, server,
@@ -370,7 +370,7 @@ class ShareMigrationHelperTestCase(test.TestCase):
             self.share_instance, server, share_driver)
 
         if exc:
-            migration.LOG.error.called
+            migration.LOG.warning.called
 
     def test__add_rules_and_wait(self):
 

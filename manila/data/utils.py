@@ -24,7 +24,7 @@ LOG = log.getLogger(__name__)
 
 class Copy(object):
 
-    def __init__(self, src, dest, ignore_list, copy_as_root=True):
+    def __init__(self, src, dest, ignore_list):
         self.src = src
         self.dest = dest
         self.total_size = 0
@@ -34,7 +34,6 @@ class Copy(object):
         self.current_copy = None
         self.ignore_list = ignore_list
         self.cancelled = False
-        self.copy_as_root = copy_as_root
 
     def get_progress(self):
 
@@ -43,7 +42,7 @@ class Copy(object):
             try:
                 size, err = utils.execute("stat", "-c", "%s",
                                           self.current_copy['file_path'],
-                                          run_as_root=self.copy_as_root)
+                                          run_as_root=True)
                 size = int(size)
             except utils.processutils.ProcessExecutionError:
                 size = 0
@@ -82,7 +81,7 @@ class Copy(object):
             return
         out, err = utils.execute(
             "ls", "-pA1", "--group-directories-first", path,
-            run_as_root=self.copy_as_root)
+            run_as_root=True)
         for line in out.split('\n'):
             if self.cancelled:
                 return
@@ -97,7 +96,7 @@ class Copy(object):
                 if line in self.ignore_list:
                     continue
                 size, err = utils.execute("stat", "-c", "%s", src_item,
-                                          run_as_root=self.copy_as_root)
+                                          run_as_root=True)
                 self.total_size += int(size)
 
     def copy_data(self, path):
@@ -105,7 +104,7 @@ class Copy(object):
             return
         out, err = utils.execute(
             "ls", "-pA1", "--group-directories-first", path,
-            run_as_root=self.copy_as_root)
+            run_as_root=True)
         for line in out.split('\n'):
             if self.cancelled:
                 return
@@ -117,20 +116,48 @@ class Copy(object):
                 if line[0:-1] in self.ignore_list:
                     continue
                 utils.execute("mkdir", "-p", dest_item,
-                              run_as_root=self.copy_as_root)
+                              run_as_root=True)
                 self.copy_data(src_item)
             else:
                 if line in self.ignore_list:
                     continue
                 size, err = utils.execute("stat", "-c", "%s", src_item,
-                                          run_as_root=self.copy_as_root)
+                                          run_as_root=True)
 
                 self.current_copy = {'file_path': dest_item,
                                      'size': int(size)}
 
                 utils.execute("cp", "-P", "--preserve=all", src_item,
-                              dest_item, run_as_root=self.copy_as_root)
+                              dest_item, run_as_root=True)
 
                 self.current_size += int(size)
 
                 LOG.info(six.text_type(self.get_progress()))
+
+    def copy_stats(self, path):
+        if self.cancelled:
+            return
+        out, err = utils.execute(
+            "ls", "-pA1", "--group-directories-first", path,
+            run_as_root=True)
+        for line in out.split('\n'):
+            if self.cancelled:
+                return
+            if len(line) == 0:
+                continue
+            src_item = os.path.join(path, line)
+            dest_item = src_item.replace(self.src, self.dest)
+            # NOTE(ganso): Should re-apply attributes for folders.
+            if line[-1] == '/':
+                if line[0:-1] in self.ignore_list:
+                    continue
+                self.copy_stats(src_item)
+                utils.execute("chmod", "--reference=%s" % src_item, dest_item,
+                              run_as_root=True)
+                utils.execute("touch", "--reference=%s" % src_item, dest_item,
+                              run_as_root=True)
+                # NOTE(ganso): Command below need no_root_squash option in ACL,
+                # for NFS shares. Setting check_exit_code=False to not break
+                # existing drivers using this.
+                utils.execute("chown", "--reference=%s" % src_item, dest_item,
+                              run_as_root=True, check_exit_code=False)

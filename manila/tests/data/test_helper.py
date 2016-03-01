@@ -13,7 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import time
+import os
 
 import ddt
 import mock
@@ -100,7 +100,7 @@ class DataServiceHelperTestCase(test.TestCase):
         self.mock_object(self.helper, 'deny_access_to_data_service',
                          mock.Mock(side_effect=exc))
 
-        self.mock_object(data_copy_helper.LOG, 'exception')
+        self.mock_object(data_copy_helper.LOG, 'warning')
 
         # run
         self.helper.cleanup_data_access(self.access, self.share_instance['id'])
@@ -110,27 +110,34 @@ class DataServiceHelperTestCase(test.TestCase):
             self.access, self.share_instance['id'])
 
         if exc:
-            self.assertTrue(data_copy_helper.LOG.exception.called)
+            self.assertTrue(data_copy_helper.LOG.warning.called)
 
-    @ddt.data(None, Exception('fake'))
+    @ddt.data(False, True)
     def test_cleanup_temp_folder(self, exc):
 
-        # mocks
-        self.mock_object(utils, 'execute', mock.Mock(side_effect=exc))
+        fake_path = ''.join(('/fake_path/', self.share_instance['id']))
 
-        self.mock_object(data_copy_helper.LOG, 'exception')
+        # mocks
+        self.mock_object(os.path, 'exists',
+                         mock.Mock(side_effect=[True, True, exc]))
+        self.mock_object(os, 'rmdir')
+
+        self.mock_object(data_copy_helper.LOG, 'warning')
 
         # run
         self.helper.cleanup_temp_folder(
             self.share_instance['id'], '/fake_path/')
 
         # asserts
-        utils.execute.assert_called_once_with(
-            'rmdir', ''.join(('/fake_path/', self.share_instance['id'])),
-            check_exit_code=False)
+        os.rmdir.assert_called_once_with(fake_path)
+        os.path.exists.assert_has_calls([
+            mock.call(fake_path),
+            mock.call(fake_path),
+            mock.call(fake_path)
+        ])
 
         if exc:
-            self.assertTrue(data_copy_helper.LOG.exception.called)
+            self.assertTrue(data_copy_helper.LOG.warning.called)
 
     @ddt.data(None, Exception('fake'))
     def test_cleanup_unmount_temp_folder(self, exc):
@@ -138,8 +145,7 @@ class DataServiceHelperTestCase(test.TestCase):
         # mocks
         self.mock_object(self.helper, 'unmount_share_instance',
                          mock.Mock(side_effect=exc))
-
-        self.mock_object(data_copy_helper.LOG, 'exception')
+        self.mock_object(data_copy_helper.LOG, 'warning')
 
         # run
         self.helper.cleanup_unmount_temp_folder(
@@ -150,7 +156,7 @@ class DataServiceHelperTestCase(test.TestCase):
             'unmount_template', 'fake_path', self.share_instance['id'])
 
         if exc:
-            self.assertTrue(data_copy_helper.LOG.exception.called)
+            self.assertTrue(data_copy_helper.LOG.warning.called)
 
     @ddt.data(True, False)
     def test__change_data_access_to_instance(self, allow):
@@ -229,19 +235,24 @@ class DataServiceHelperTestCase(test.TestCase):
 
         # mocks
         self.mock_object(utils, 'execute')
-
-        self.mock_object(time, 'sleep')
+        self.mock_object(os.path, 'exists', mock.Mock(
+            side_effect=[False, False, True]))
+        self.mock_object(os, 'makedirs')
 
         # run
         self.helper.mount_share_instance(
             'mount %(path)s', '/fake_path', self.share_instance['id'])
 
         # asserts
-        utils.execute.assert_has_calls(
-            [mock.call('mkdir', '-p', fake_path),
-             mock.call('mount', fake_path, run_as_root=True)])
+        utils.execute.assert_called_once_with('mount', fake_path,
+                                              run_as_root=True)
 
-        self.assertTrue(time.sleep.called)
+        os.makedirs.assert_called_once_with(fake_path)
+        os.path.exists.assert_has_calls([
+            mock.call(fake_path),
+            mock.call(fake_path),
+            mock.call(fake_path)
+        ])
 
     def test_unmount_share_instance(self):
 
@@ -249,12 +260,20 @@ class DataServiceHelperTestCase(test.TestCase):
 
         # mocks
         self.mock_object(utils, 'execute')
+        self.mock_object(os.path, 'exists', mock.Mock(
+            side_effect=[True, True, False]))
+        self.mock_object(os, 'rmdir')
 
         # run
         self.helper.unmount_share_instance(
             'unmount %(path)s', '/fake_path', self.share_instance['id'])
 
         # asserts
-        utils.execute.assert_has_calls(
-            [mock.call('unmount', fake_path, run_as_root=True),
-             mock.call('rmdir', fake_path, check_exit_code=False)])
+        utils.execute.assert_called_once_with('unmount', fake_path,
+                                              run_as_root=True)
+        os.rmdir.assert_called_once_with(fake_path)
+        os.path.exists.assert_has_calls([
+            mock.call(fake_path),
+            mock.call(fake_path),
+            mock.call(fake_path)
+        ])

@@ -230,6 +230,82 @@ class CopyClassTestCase(test.TestCase):
         # reset
         self._copy.cancelled = False
 
+    def test_copy_stats(self):
+
+        values = [("folder1/\nitem/\nfile1\nitem", ""),
+                  ("", ""),
+                  "",
+                  "",
+                  "",
+                  "",
+                  "",
+                  ""]
+
+        def get_output(*args, **kwargs):
+            return values.pop(0)
+
+        # mocks
+        self.mock_object(utils, 'execute', mock.Mock(
+            side_effect=get_output))
+
+        # run
+        self._copy.copy_stats(self._copy.src)
+
+        # asserts
+        utils.execute.assert_has_calls([
+            mock.call("ls", "-pA1", "--group-directories-first",
+                      self._copy.src, run_as_root=True),
+            mock.call("ls", "-pA1", "--group-directories-first",
+                      os.path.join(self._copy.src, "folder1/"),
+                      run_as_root=True),
+            mock.call(
+                "chmod",
+                "--reference=%s" % os.path.join(self._copy.src, "folder1/"),
+                os.path.join(self._copy.dest, "folder1/"),
+                run_as_root=True),
+            mock.call(
+                "touch",
+                "--reference=%s" % os.path.join(self._copy.src, "folder1/"),
+                os.path.join(self._copy.dest, "folder1/"),
+                run_as_root=True),
+            mock.call(
+                "chown",
+                "--reference=%s" % os.path.join(self._copy.src, "folder1/"),
+                os.path.join(self._copy.dest, "folder1/"),
+                run_as_root=True, check_exit_code=False),
+        ])
+
+    def test_copy_stats_cancelled_1(self):
+
+        self._copy.cancelled = True
+
+        # run
+        self._copy.copy_stats(self._copy.src)
+
+        # reset
+        self._copy.cancelled = False
+
+    def test_copy_stats_cancelled_2(self):
+
+        def ls_output(*args, **kwargs):
+            self._copy.cancelled = True
+            return "folder1/", ""
+
+        # mocks
+        self.mock_object(utils, 'execute', mock.Mock(
+            side_effect=ls_output))
+
+        # run
+        self._copy.copy_stats(self._copy.src)
+
+        # asserts
+        utils.execute.assert_called_once_with(
+            "ls", "-pA1", "--group-directories-first", self._copy.src,
+            run_as_root=True)
+
+        # reset
+        self._copy.cancelled = False
+
     def test_run(self):
 
         # mocks

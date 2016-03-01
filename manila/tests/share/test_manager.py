@@ -3289,7 +3289,11 @@ class ShareManagerTestCase(test.TestCase):
         share_update_calls = [
             mock.call(
                 self.context, share['id'],
-                {'task_state': constants.TASK_STATE_MIGRATION_IN_PROGRESS})
+                {'task_state': constants.TASK_STATE_MIGRATION_IN_PROGRESS}),
+            mock.call(
+                self.context, share['id'],
+                {'task_state': (
+                    constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS)})
         ]
         share_instance_update_calls = [
             mock.call(self.context, instance['id'],
