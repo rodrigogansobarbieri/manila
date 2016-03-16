@@ -85,7 +85,7 @@ class DataManager(manager.Manager):
                 ignore_list)
 
             self._copy_share_data(
-                context, copy, share_ref, share_instance_id,
+                context, copy, share_ref, None, share_instance_id,
                 dest_share_instance_id, migration_info_src,
                 migration_info_dest)
         except exception.ShareDataCopyCancelled:
@@ -152,23 +152,103 @@ class DataManager(manager.Manager):
             LOG.error(msg)
             raise exception.InvalidShare(reason=msg)
 
+    def copy_share_data(self, context, src_share_id, dest_share_id,
+                        path_src, path_dest, share_instance_id,
+                        dest_share_instance_id, migration_info_src,
+                        migration_info_dest, callback):
+        LOG.info(_LI(
+            "Received request to copy share data from share instance "
+            "%(instance_id)s to instance %(dest_instance_id)s."),
+            {'instance_id': share_instance_id,
+             'dest_instance_id': dest_share_instance_id})
+
+        src_share_ref = self.db.share_get(context, src_share_id)
+        dest_share_ref = self.db.share_get(context, dest_share_id)
+
+        share_rpcapi = share_rpc.ShareAPI()
+        mount_path = CONF.migration_tmp_location
+
+        try:
+            copy = data_utils.Copy(
+                os.path.join(mount_path, share_instance_id, path_src),
+                os.path.join(mount_path, dest_share_instance_id, path_dest),
+                [])
+
+            self._copy_share_data(
+                context, copy, src_share_ref, dest_share_ref,
+                share_instance_id, dest_share_instance_id, migration_info_src,
+                migration_info_dest)
+        except exception.ShareDataCopyCancelled:
+            share_rpcapi.driver_data_copy_complete(
+                context, src_share_ref, dest_share_ref, path_src, path_dest)
+            return
+        except Exception as e:
+            self.db.share_update(
+                context, src_share_id,
+                {'task_state': constants.TASK_STATE_DATA_COPYING_ERROR})
+            error = six.text_type(e)
+            LOG.exception(error)
+            share_rpcapi.driver_data_copy_complete(
+                context, src_share_ref, dest_share_ref, path_src, path_dest)
+            raise exception.ShareDataCopyFailed(reason=error)
+        finally:
+            self.busy_tasks_shares.pop(src_share_id, None)
+            self.busy_tasks_shares.pop(dest_share_id, None)
+
+        LOG.info(_LI(
+            "Completed operation of copying share data from share "
+            "instance %(instance_id)s to instance %(dest_instance_id)s.")
+            % {'instance_id': share_instance_id,
+                'dest_instance_id': dest_share_instance_id})
+
+        LOG.info(_LI(
+            "Notifying source backend that copying share data from"
+            " share instance %(instance_id)s to instance "
+            "%(dest_instance_id)s completed.") % {
+                'instance_id': share_instance_id,
+                'dest_instance_id': dest_share_instance_id})
+
+        share_rpcapi.driver_data_copy_complete(
+            context, src_share_ref, dest_share_ref, path_src, path_dest,
+            callback)
+
     def _copy_share_data(
-            self, context, copy, src_share, share_instance_id,
+            self, context, copy, src_share, dest_share, share_instance_id,
             dest_share_instance_id, migration_info_src, migration_info_dest):
 
         copied = False
         mount_path = CONF.migration_tmp_location
 
-        self.db.share_update(
-            context, src_share['id'],
-            {'task_state': constants.TASK_STATE_DATA_COPYING_STARTING})
+        for share in (src_share, dest_share):
+            if share:
+                self.db.share_update(
+                    context, share['id'],
+                    {'task_state': constants.TASK_STATE_DATA_COPYING_STARTING})
 
         helper_src = helper.DataServiceHelper(context, self.db, src_share)
-        helper_dest = helper_src
+        if dest_share:
+            helper_dest = helper.DataServiceHelper(
+                context, self.db, dest_share)
+        else:
+            helper_dest = helper_src
 
         access_ref_src = helper_src.allow_access_to_data_service(
             src_share, share_instance_id, dest_share_instance_id)
-        access_ref_dest = access_ref_src
+        if dest_share:
+            try:
+                access_ref_dest = helper_dest.allow_access_to_data_service(
+                    dest_share, )
+            except Exception as e:
+                LOG.error(_LE("Share migration failed attempting to allow "
+                              "access to share instance %(instance_id)s.") % {
+                    'instance_id': dest_share_instance_id})
+                msg = six.text_type(e)
+                LOG.exception(msg)
+                helper_src.cleanup_data_access(access_ref_src,
+                                               share_instance_id)
+                raise exception.ShareDataCopyFailed(reason=msg)
+        else:
+            access_ref_dest = access_ref_src
 
         def _call_cleanups(items):
             for item in items:
@@ -210,17 +290,21 @@ class DataManager(manager.Manager):
                             'temp_folder_src', 'access_dest', 'access_src'])
             raise exception.ShareDataCopyFailed(reason=msg)
 
-        self.busy_tasks_shares[src_share['id']] = copy
-        self.db.share_update(
-            context, src_share['id'],
-            {'task_state': constants.TASK_STATE_DATA_COPYING_IN_PROGRESS})
+        for share in (src_share, dest_share):
+            if share:
+                self.busy_tasks_shares[share['id']] = copy
+                self.db.share_update(
+                    context, share['id'],
+                    {'task_state': constants.TASK_STATE_DATA_COPYING_IN_PROGRESS})
 
         try:
             copy.run()
 
-            self.db.share_update(
-                context, src_share['id'],
-                {'task_state': constants.TASK_STATE_DATA_COPYING_COMPLETING})
+            for share in (src_share, dest_share):
+                if share:
+                    self.db.share_update(
+                        context, share['id'],
+                        {'task_state': constants.TASK_STATE_DATA_COPYING_COMPLETING})
 
             if copy.get_progress()['total_progress'] == 100:
                 copied = True
@@ -262,9 +346,11 @@ class DataManager(manager.Manager):
                           " %s after its data copy."), dest_share_instance_id)
 
         if copy and copy.cancelled:
-            self.db.share_update(
-                context, src_share['id'],
-                {'task_state': constants.TASK_STATE_DATA_COPYING_CANCELLED})
+            for share in (src_share, dest_share):
+                if share:
+                    self.db.share_update(
+                        context, share['id'],
+                        {'task_state': constants.TASK_STATE_DATA_COPYING_CANCELLED})
             LOG.warning(_LW("Copy of data from share instance "
                             "%(src_instance)s to share instance "
                             "%(dest_instance)s was cancelled."),
@@ -281,9 +367,11 @@ class DataManager(manager.Manager):
                  'dest_instance_id': dest_share_instance_id})
             raise exception.ShareDataCopyFailed(reason=msg)
 
-        self.db.share_update(
-            context, src_share['id'],
-            {'task_state': constants.TASK_STATE_DATA_COPYING_COMPLETED})
+        for share in (src_share, dest_share):
+            if share:
+                self.db.share_update(
+                    context, share['id'],
+                    {'task_state': constants.TASK_STATE_DATA_COPYING_COMPLETED})
 
         LOG.debug("Copy of data from share instance %(src_instance)s to "
                   "share instance %(dest_instance)s was successful.",
