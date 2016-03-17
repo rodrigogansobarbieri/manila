@@ -476,14 +476,21 @@ class API(base.Base):
         shares = self.get_all(context, {
             'host': share_data['host'],
             'export_location': share_data['export_location'],
-            'share_proto': share_data['share_proto']
+            'share_proto': share_data['share_proto'],
+            'share_type_id': share_data['share_type_id']
         })
+
+        share_type = {}
+        share_type_id = share_data['share_type_id']
+        if share_type_id:
+            share_type = share_types.get_share_type(context, share_type_id)
 
         share_data.update({
             'user_id': context.user_id,
             'project_id': context.project_id,
             'status': constants.STATUS_MANAGING,
             'scheduled_at': timeutils.utcnow(),
+            'snapshot_support': share_type['snapshot_support'],
         })
 
         LOG.debug("Manage: Found shares %s.", len(shares))
@@ -505,7 +512,47 @@ class API(base.Base):
         self.db.share_export_locations_update(context, share.instance['id'],
                                               export_location)
 
-        self.share_rpcapi.manage_share(context, share, driver_options)
+        share_instance = share['instance']
+
+        share_properties = {
+            'size': 0,
+            'user_id': share['user_id'],
+            'project_id': share['project_id'],
+            'share_server_id': share_instance['share_server_id'],
+            'snapshot_support': share_data['snapshot_support'],
+            'share_proto': share['share_proto'],
+            'share_type_id': share['share_type_id'],
+            'is_public': share['is_public'],
+            'consistency_group_id': share['consistency_group_id'],
+            'source_cgsnapshot_member_id': share[
+                'source_cgsnapshot_member_id'],
+            'snapshot_id': share['snapshot_id'],
+        }
+        share_instance_properties = {
+            'availability_zone_id': share_instance['availability_zone_id'],
+            'share_network_id': share_instance['share_network_id'],
+            'share_server_id': share_instance['share_server_id'],
+            'share_id': share_instance['share_id'],
+            'host': share_instance['host'],
+            'status': share_instance['status'],
+        }
+        request_spec = {
+            'share_properties': share_properties,
+            'share_instance_properties': share_instance_properties,
+            'share_type': share_type,
+            'share_id': share['id']
+        }
+
+        try:
+            self.scheduler_rpcapi.manage_share(context, share['id'],
+                                               driver_options, request_spec)
+        except Exception:
+            msg = _('Host %(host)s did not pass validation for managing of '
+                    'share %(share)s with type %(type)s.') % {
+                'host': share['host'],
+                'share': share['id'],
+                'type': share['share_type_id']}
+            raise exception.InvalidHost(reason=msg)
         return self.db.share_get(context, share['id'])
 
     def unmanage(self, context, share):
