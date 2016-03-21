@@ -33,6 +33,8 @@ class DataAPI(object):
               Add migration_start(),
               data_copy_cancel(),
               data_copy_get_progress()
+        1.1 - Add copy_share_data(),
+              delete_share_data()
     """
 
     BASE_RPC_API_VERSION = '1.0'
@@ -41,7 +43,7 @@ class DataAPI(object):
         super(DataAPI, self).__init__()
         target = messaging.Target(topic=CONF.data_topic,
                                   version=self.BASE_RPC_API_VERSION)
-        self.client = rpc.get_client(target, version_cap='1.0')
+        self.client = rpc.get_client(target, version_cap='1.1')
 
     def migration_start(self, context, share_id, ignore_list,
                         share_instance_id, dest_share_instance_id,
@@ -66,3 +68,34 @@ class DataAPI(object):
         call_context = self.client.prepare(version='1.0')
         return call_context.call(context, 'data_copy_get_progress',
                                  share_id=share_id)
+
+    def copy_share_data(
+            self, context, src_share_id, dest_share_id, src_path, dest_path,
+            src_share_instance_id, dest_share_instance_id,
+            migration_info_src, migration_info_dest, callback):
+        call_context = self.client.prepare(version='1.1')
+        call_context.cast(
+            context,
+            'copy_share_data',
+            src_share_id=src_share_id,
+            dest_share_id=dest_share_id,
+            src_path=src_path,
+            dest_path=dest_path,
+            src_share_instance_id=src_share_instance_id,
+            dest_share_instance_id=dest_share_instance_id,
+            migration_info_src=migration_info_src,
+            migration_info_dest=migration_info_dest,
+            callback=callback)
+
+    def delete_share_data(
+            self, context, share_id, path, share_instance_id, migration_info,
+            callback):
+        call_context = self.client.prepare(version='1.1')
+        call_context.cast(
+            context,
+            'delete_share_data',
+            share_id=share_id,
+            path=path,
+            share_instance_id=share_instance_id,
+            migration_info=migration_info,
+            callback=callback)

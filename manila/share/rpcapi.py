@@ -59,6 +59,7 @@ class ShareAPI(object):
             migration_get_driver_info()
         1.11 - Add create_replicated_snapshot() and
             delete_replicated_snapshot() methods
+        1.12 - Add driver_data_copy_complete()
     """
 
     BASE_RPC_API_VERSION = '1.0'
@@ -67,7 +68,7 @@ class ShareAPI(object):
         super(ShareAPI, self).__init__()
         target = messaging.Target(topic=CONF.share_topic,
                                   version=self.BASE_RPC_API_VERSION)
-        self.client = rpc.get_client(target, version_cap='1.11')
+        self.client = rpc.get_client(target, version_cap='1.12')
 
     def create_share_instance(self, context, share_instance, host,
                               request_spec, filter_properties,
@@ -316,3 +317,42 @@ class ShareAPI(object):
         return call_context.call(context,
                                  'migration_get_progress',
                                  share_id=share['id'])
+
+    def driver_data_copy_complete(self, context, share_src, share_dest,
+                                  src_path, dest_path, src_share_instance_id,
+                                  dest_share_instance_id, callback=None):
+        new_host = utils.extract_host(share_src['host'])
+        call_context = self.client.prepare(server=new_host, version='1.12')
+        call_context.cast(
+            context,
+            'driver_data_copy_complete_src',
+            src_share_id=share_src['id'],
+            src_path=src_path,
+            src_share_instance_id=src_share_instance_id,
+            dest_share_id=share_dest['id'],
+            dest_path=dest_path,
+            dest_share_instance_id=dest_share_instance_id,
+            callback=callback)
+        new_host = utils.extract_host(share_dest['host'])
+        call_context = self.client.prepare(server=new_host, version='1.12')
+        call_context.cast(
+            context, 'driver_data_copy_complete_dest',
+            src_share_id=share_src['id'],
+            src_path=src_path,
+            src_share_instance_id=src_share_instance_id,
+            dest_share_id=share_dest['id'],
+            dest_path=dest_path,
+            dest_share_instance_id=dest_share_instance_id,
+            callback=callback)
+
+    def driver_data_delete_complete(self, context, share, path,
+                                    share_instance_id, callback=None):
+        new_host = utils.extract_host(share['host'])
+        call_context = self.client.prepare(server=new_host, version='1.12')
+        call_context.cast(
+            context,
+            'driver_data_delete_complete',
+            share_id=share['id'],
+            path=path,
+            share_instance_id=share_instance_id,
+            callback=callback)

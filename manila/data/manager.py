@@ -47,7 +47,7 @@ CONF.register_opts(data_opts)
 class DataManager(manager.Manager):
     """Receives requests to handle data and sends responses."""
 
-    RPC_API_VERSION = '1.0'
+    RPC_API_VERSION = '1.1'
 
     def __init__(self, service_name=None, *args, **kwargs):
         super(DataManager, self).__init__(*args, **kwargs)
@@ -180,37 +180,42 @@ class DataManager(manager.Manager):
                 migration_info_dest)
         except exception.ShareDataCopyCancelled:
             share_rpcapi.driver_data_copy_complete(
-                context, src_share_ref, dest_share_ref, path_src, path_dest)
+                context, src_share_ref, dest_share_ref, path_src, path_dest,
+                share_instance_id, dest_share_instance_id, callback)
             return
-        except Exception as e:
-            self.db.share_update(
-                context, src_share_id,
-                {'task_state': constants.TASK_STATE_DATA_COPYING_ERROR})
-            error = six.text_type(e)
-            LOG.exception(error)
+        except Exception:
+            for share in (src_share_ref, dest_share_ref):
+                self.db.share_update(
+                    context, share['id'],
+                    {'task_state': constants.TASK_STATE_DATA_COPYING_ERROR})
+            msg = _("Failed to copy contents from instance %(src)s to "
+                    "instance %(dest)s.") % {'src': share_instance_id,
+                                             'dest': dest_share_instance_id}
+            LOG.exception(msg)
             share_rpcapi.driver_data_copy_complete(
-                context, src_share_ref, dest_share_ref, path_src, path_dest)
-            raise exception.ShareDataCopyFailed(reason=error)
+                context, src_share_ref, dest_share_ref, path_src, path_dest,
+                share_instance_id, dest_share_instance_id, callback)
+            raise exception.ShareDataCopyFailed(reason=msg)
         finally:
             self.busy_tasks_shares.pop(src_share_id, None)
             self.busy_tasks_shares.pop(dest_share_id, None)
 
         LOG.info(_LI(
             "Completed operation of copying share data from share "
-            "instance %(instance_id)s to instance %(dest_instance_id)s.")
-            % {'instance_id': share_instance_id,
-                'dest_instance_id': dest_share_instance_id})
+            "instance %(instance_id)s to instance %(dest_instance_id)s."),
+            {'instance_id': share_instance_id,
+             'dest_instance_id': dest_share_instance_id})
 
         LOG.info(_LI(
             "Notifying source backend that copying share data from"
             " share instance %(instance_id)s to instance "
-            "%(dest_instance_id)s completed.") % {
-                'instance_id': share_instance_id,
-                'dest_instance_id': dest_share_instance_id})
+            "%(dest_instance_id)s completed."),
+            {'instance_id': share_instance_id,
+             'dest_instance_id': dest_share_instance_id})
 
         share_rpcapi.driver_data_copy_complete(
             context, src_share_ref, dest_share_ref, path_src, path_dest,
-            callback)
+            share_instance_id, dest_share_instance_id, callback)
 
     def _copy_share_data(
             self, context, copy, src_share, dest_share, share_instance_id,
@@ -237,12 +242,11 @@ class DataManager(manager.Manager):
         if dest_share:
             try:
                 access_ref_dest = helper_dest.allow_access_to_data_service(
-                    dest_share, )
-            except Exception as e:
-                LOG.error(_LE("Share migration failed attempting to allow "
-                              "access to share instance %(instance_id)s.") % {
-                    'instance_id': dest_share_instance_id})
-                msg = six.text_type(e)
+                    dest_share, dest_share_instance_id, None)
+            except Exception:
+                msg = _("Share migration failed attempting to allow "
+                        "access to share instance %(instance_id)s.") % {
+                    'instance_id': dest_share_instance_id}
                 LOG.exception(msg)
                 helper_src.cleanup_data_access(access_ref_src,
                                                share_instance_id)
@@ -295,7 +299,8 @@ class DataManager(manager.Manager):
                 self.busy_tasks_shares[share['id']] = copy
                 self.db.share_update(
                     context, share['id'],
-                    {'task_state': constants.TASK_STATE_DATA_COPYING_IN_PROGRESS})
+                    {'task_state': (
+                        constants.TASK_STATE_DATA_COPYING_IN_PROGRESS)})
 
         try:
             copy.run()
@@ -304,7 +309,8 @@ class DataManager(manager.Manager):
                 if share:
                     self.db.share_update(
                         context, share['id'],
-                        {'task_state': constants.TASK_STATE_DATA_COPYING_COMPLETING})
+                        {'task_state': (
+                            constants.TASK_STATE_DATA_COPYING_COMPLETING)})
 
             if copy.get_progress()['total_progress'] == 100:
                 copied = True
@@ -350,7 +356,8 @@ class DataManager(manager.Manager):
                 if share:
                     self.db.share_update(
                         context, share['id'],
-                        {'task_state': constants.TASK_STATE_DATA_COPYING_CANCELLED})
+                        {'task_state': (
+                            constants.TASK_STATE_DATA_COPYING_CANCELLED)})
             LOG.warning(_LW("Copy of data from share instance "
                             "%(src_instance)s to share instance "
                             "%(dest_instance)s was cancelled."),
@@ -371,7 +378,8 @@ class DataManager(manager.Manager):
             if share:
                 self.db.share_update(
                     context, share['id'],
-                    {'task_state': constants.TASK_STATE_DATA_COPYING_COMPLETED})
+                    {'task_state': (
+                        constants.TASK_STATE_DATA_COPYING_COMPLETED)})
 
         LOG.debug("Copy of data from share instance %(src_instance)s to "
                   "share instance %(dest_instance)s was successful.",

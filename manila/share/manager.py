@@ -44,6 +44,7 @@ from manila import manager
 from manila import quota
 from manila.share import access
 import manila.share.configuration
+from manila.share import drivers_data_helper
 from manila.share import drivers_private_data
 from manila.share import migration
 from manila.share import rpcapi as share_rpcapi
@@ -169,7 +170,7 @@ def add_hooks(f):
 class ShareManager(manager.SchedulerDependentManager):
     """Manages NAS storages."""
 
-    RPC_API_VERSION = '1.11'
+    RPC_API_VERSION = '1.12'
 
     def __init__(self, share_driver=None, service_name=None, *args, **kwargs):
         """Load the driver from args, or from flags."""
@@ -194,11 +195,11 @@ class ShareManager(manager.SchedulerDependentManager):
             context=ctxt, backend_host=self.host,
             config_group=self.configuration.config_group
         )
+        data_service_helper = drivers_data_helper.DataServiceHelper()
         self.driver = importutils.import_object(
             share_driver, private_storage=private_storage,
-            configuration=self.configuration,
+            configuration=self.configuration, data_service=data_service_helper
         )
-
         self.access_helper = access.ShareInstanceAccess(self.db, self.driver)
 
         self.hooks = []
@@ -907,6 +908,117 @@ class ShareManager(manager.SchedulerDependentManager):
             msg = _("Driver is not performing migration for"
                     " share %s") % share_id
             raise exception.InvalidShare(reason=msg)
+
+    def driver_data_copy_complete_src(self, context, src_share_id,
+                                      dest_share_id, src_path, dest_path,
+                                      src_share_instance_id,
+                                      dest_share_instance_id, callback=None):
+
+        src_share_ref = self.db.share_get(context, src_share_id)
+        dest_share_ref = self.db.share_get(context, dest_share_id)
+
+        src_share_instance_ref = self.db.share_instance_get(
+            context, src_share_instance_id, with_share_data=True)
+
+        copy_successful = self._driver_data_copy_complete(
+            src_share_ref, src_path, dest_share_ref, dest_path)
+
+        if copy_successful and callback:
+
+            src_share_server = None
+            if src_share_instance_ref.get('share_server_id'):
+                src_share_server = self.db.share_server_get(
+                    context, src_share_instance_ref['share_server_id'])
+
+            dest_share_instance_ref = self.db.share_instance_get(
+                context, dest_share_instance_id, with_share_data=True)
+
+            method = getattr(self.driver, callback)
+            method(context, src_share_instance_ref, src_path,
+                   dest_share_instance_ref, dest_path, src_share_server)
+
+    def driver_data_copy_complete_dest(self, context, src_share_id,
+                                       dest_share_id, src_path, dest_path,
+                                       src_share_instance_id,
+                                       dest_share_instance_id, callback=None):
+
+        src_share_ref = self.db.share_get(context, src_share_id)
+        dest_share_ref = self.db.share_get(context, dest_share_id)
+
+        dest_share_instance_ref = self.db.share_instance_get(
+            context, dest_share_instance_id, with_share_data=True)
+
+        copy_successful = self._driver_data_copy_complete(
+            src_share_ref, src_path, dest_share_ref, dest_path)
+
+        if copy_successful and callback:
+
+            dest_share_server = None
+            if dest_share_instance_ref.get('share_server_id'):
+                dest_share_server = self.db.share_server_get(
+                    context, dest_share_instance_ref['share_server_id'])
+
+            method = getattr(self.driver, callback)
+
+            src_share_instance_ref = self.db.share_instance_get(
+                context, src_share_instance_id, with_share_data=True)
+
+            method(context, src_share_instance_ref, src_path,
+                   dest_share_instance_ref, dest_path, dest_share_server)
+
+    def driver_data_delete_complete(self, context, share_id, path,
+                                    share_instance_id, callback=None):
+
+        share_ref = self.db.share_get(context, share_id)
+
+        delete_successful = self._driver_data_copy_complete(
+            share_ref, path, share_ref, path)
+
+        share_instance_ref = self.db.share_instance_get(
+            context, share_instance_id, with_share_data=True)
+
+        if delete_successful and callback:
+
+            share_server = None
+            if share_instance_ref.get('share_server_id'):
+                share_server = self.db.share_server_get(
+                    context, share_instance_ref['share_server_id'])
+
+            method = getattr(self.driver, callback)
+            method(context, share_instance_ref, path, share_server)
+
+    def _driver_data_copy_complete(self, src_share, src_path, dest_share,
+                                   dest_path):
+
+        task_state_src = src_share['task_state']
+        task_state_dest = dest_share['task_state']
+
+        if (task_state_src, task_state_dest) == (
+                constants.TASK_STATE_DATA_COPYING_ERROR,
+                constants.TASK_STATE_DATA_COPYING_ERROR):
+            msg = (_("Failed to copy data from share %(src_id)s path "
+                     "%(src_path)s to share %(dest_id)s. path %(dest_path)s.")
+                   % {
+                'src_id': src_share['id'],
+                'dest_id': dest_share['id'],
+                'src_path': src_path,
+                'dest_path': dest_path
+            })
+            raise exception.ShareDataCopyFailed(reason=msg)
+
+        elif (task_state_src, task_state_dest) == (
+                constants.TASK_STATE_DATA_COPYING_CANCELLED,
+                constants.TASK_STATE_DATA_COPYING_CANCELLED):
+            msg = (_("Data copying from share %(src_id)s path %(src_path)s to "
+                     "share %(dest_id)s. path %(dest_path)s was cancelled.")
+                   % {
+                'src_id': src_share['id'],
+                'dest_id': dest_share['id'],
+                'src_path': src_path,
+                'dest_path': dest_path
+            })
+            LOG.warning(msg)
+            return False
 
     def _get_share_instance(self, context, share):
         if isinstance(share, six.string_types):
