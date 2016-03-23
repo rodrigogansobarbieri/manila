@@ -160,21 +160,24 @@ class ManageNFSShareTest(base.BaseSharesAdminTest):
     def test_manage_retry(self):
         # Manage share with invalid parameters
 
-        self.assertRaises(
-            lib_exc.Conflict,
-            self.shares_v2_client.manage_share,
-            service_host=self.shares[1]['host'],
-            export_path=self.shares[1]['export_locations'][0],
-            protocol=self.shares[1]['share_proto'],
-            share_type_id=self.st_invalid['share_type']['id'])
+        share = None
+        parameters = [(self.st_invalid['share_type']['id'], 'manage_error'),
+                      (self.st['share_type']['id'], 'available')]
 
-        share = self.shares_v2_client.manage_share(
-            service_host=self.shares[1]['host'],
-            export_path=self.shares[1]['export_locations'][0],
-            protocol=self.shares[1]['share_proto'],
-            share_type_id=self.st['share_type']['id'])
+        for share_type_id, status in parameters:
+            share = self.shares_v2_client.manage_share(
+                service_host=self.shares[1]['host'],
+                export_path=self.shares[1]['export_locations'][0],
+                protocol=self.shares[1]['share_proto'],
+                share_type_id=share_type_id)
 
-        self.shares_v2_client.wait_for_share_status(share['id'], 'available')
+            # Add managed share to cleanup queue
+            self.method_resources.insert(
+                0, {'type': 'share', 'id': share['id'],
+                    'client': self.shares_v2_client})
+
+            # Wait for success
+            self.shares_v2_client.wait_for_share_status(share['id'], status)
 
         # Delete share
         self.shares_v2_client.delete_share(share['id'])
