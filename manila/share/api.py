@@ -498,17 +498,29 @@ class API(base.Base):
     def manage(self, context, share_data, driver_options):
         policy.check_policy(context, 'share', 'manage')
 
+        share_type = {}
+        share_type_id = share_data['share_type_id']
+        if share_type_id:
+            share_type = share_types.get_share_type(context, share_type_id)
+
+        request_spec = self._get_request_spec_dict(None, share_type, size=0)
+
+        try:
+            self.scheduler_rpcapi.manage_share(context, share_data['host'],
+                                               request_spec)
+        except Exception:
+            msg = _('Host %(host)s did not pass validation for managing with '
+                    'type %(type)s.') % {
+                'host': share_data['host'],
+                'type': share_data['share_type_id']}
+            raise exception.InvalidHost(reason=msg)
+
         shares = self.get_all(context, {
             'host': share_data['host'],
             'export_location': share_data['export_location'],
             'share_proto': share_data['share_proto'],
             'share_type_id': share_data['share_type_id']
         })
-
-        share_type = {}
-        share_type_id = share_data['share_type_id']
-        if share_type_id:
-            share_type = share_types.get_share_type(context, share_type_id)
 
         snapshot_support = strutils.bool_from_string(
             share_type.get('extra_specs', {}).get(
@@ -542,53 +554,48 @@ class API(base.Base):
         self.db.share_export_locations_update(context, share.instance['id'],
                                               export_location)
 
-        request_spec = self._get_request_spec_dict(share, share_type, size=0)
-
-        try:
-            self.scheduler_rpcapi.manage_share(context, share['id'],
-                                               driver_options, request_spec)
-        except Exception:
-            msg = _('Host %(host)s did not pass validation for managing of '
-                    'share %(share)s with type %(type)s.') % {
-                'host': share['host'],
-                'share': share['id'],
-                'type': share['share_type_id']}
-            raise exception.InvalidHost(reason=msg)
+        self.share_rpcapi.manage_share(context, share, driver_options)
         return self.db.share_get(context, share['id'])
 
     def _get_request_spec_dict(self, share, share_type, **kwargs):
-        share_instance = share['instance']
 
-        share_properties = {
-            'size': kwargs.get('size', share['size']),
-            'user_id': kwargs.get('user_id', share['user_id']),
-            'project_id': kwargs.get('project_id', share['project_id']),
-            'snapshot_support': kwargs.get(
-                'snapshot_support',
-                share_type['extra_specs']['snapshot_support']),
-            'share_proto': kwargs.get('share_proto', share['share_proto']),
-            'share_type_id': kwargs.get('share_type_id',
-                                        share['share_type_id']),
-            'is_public': kwargs.get('is_public', share['is_public']),
-            'consistency_group_id': kwargs.get('consistency_group_id',
-                                               share['consistency_group_id']),
-            'source_cgsnapshot_member_id': kwargs.get(
-                'source_cgsnapshot_member_id',
-                share['source_cgsnapshot_member_id']),
-            'snapshot_id': kwargs.get('snapshot_id', share['snapshot_id']),
-        }
-        share_instance_properties = {
-            'availability_zone_id': kwargs.get(
-                'availability_zone_id',
-                share_instance['availability_zone_id']),
-            'share_network_id': kwargs.get('share_network_id',
-                                           share_instance['share_network_id']),
-            'share_server_id': kwargs.get('share_server_id',
-                                          share_instance['share_server_id']),
-            'share_id': kwargs.get('share_id', share_instance['share_id']),
-            'host': kwargs.get('host', share_instance['host']),
-            'status': kwargs.get('status', share_instance['status']),
-        }
+        if share:
+            share_instance = share['instance']
+
+            share_properties = {
+                'size': kwargs.get('size', share['size']),
+                'user_id': kwargs.get('user_id', share['user_id']),
+                'project_id': kwargs.get('project_id', share['project_id']),
+                'snapshot_support': kwargs.get(
+                    'snapshot_support',
+                    share_type['extra_specs']['snapshot_support']),
+                'share_proto': kwargs.get('share_proto', share['share_proto']),
+                'share_type_id': kwargs.get('share_type_id',
+                                            share['share_type_id']),
+                'is_public': kwargs.get('is_public', share['is_public']),
+                'consistency_group_id': kwargs.get(
+                    'consistency_group_id', share['consistency_group_id']),
+                'source_cgsnapshot_member_id': kwargs.get(
+                    'source_cgsnapshot_member_id',
+                    share['source_cgsnapshot_member_id']),
+                'snapshot_id': kwargs.get('snapshot_id', share['snapshot_id']),
+            }
+            share_instance_properties = {
+                'availability_zone_id': kwargs.get(
+                    'availability_zone_id',
+                    share_instance['availability_zone_id']),
+                'share_network_id': kwargs.get(
+                    'share_network_id', share_instance['share_network_id']),
+                'share_server_id': kwargs.get(
+                    'share_server_id', share_instance['share_server_id']),
+                'share_id': kwargs.get('share_id', share_instance['share_id']),
+                'host': kwargs.get('host', share_instance['host']),
+                'status': kwargs.get('status', share_instance['status']),
+            }
+        else:
+            share_properties = None
+            share_instance_properties = None
+
         request_spec = {
             'share_properties': share_properties,
             'share_instance_properties': share_instance_properties,

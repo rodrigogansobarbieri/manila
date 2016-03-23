@@ -104,12 +104,11 @@ class SchedulerAPI(object):
                                  request_spec=request_spec_p,
                                  filter_properties=filter_properties)
 
-    def manage_share(self, context, share_id, driver_options,
-                     request_spec=None, filter_properties=None):
+    def manage_share(self, context, host, request_spec=None,
+                     filter_properties=None):
 
         call_context = self.client.prepare(version='1.6')
         return call_context.call(context, 'manage_share',
-                                 share_id=share_id,
-                                 driver_options=driver_options,
+                                 host=host,
                                  request_spec=request_spec,
                                  filter_properties=filter_properties)
