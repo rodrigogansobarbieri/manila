@@ -101,7 +101,7 @@ class HDSHNASTestCase(test.TestCase):
         CONF.hds_hnas_ip_port = 'hds_hnas_ip_port'
         CONF.hds_hnas_user = 'hds_hnas_user'
         CONF.hds_hnas_password = 'hds_hnas_password'
-        CONF.hds_hnas_file_system = 'file_system'
+        CONF.hds_hnas_file_system_name = 'file_system'
         CONF.hds_hnas_ssh_private_key = 'private_key'
         CONF.hds_hnas_cluster_admin_ip0 = None
         CONF.hds_hnas_stalled_job_timeout = 10
@@ -505,6 +505,17 @@ class HDSHNASTestCase(test.TestCase):
         ssh.HNASSSHBackend.check_fs_mounted.assert_called_once_with()
         ssh.HNASSSHBackend.mount.assert_called_once_with()
         self.assertTrue(self.mock_log.debug.called)
+
+    def test__check_fs_mounted_not_automount(self):
+        self._driver.automount_fs = False
+
+        self.mock_object(ssh.HNASSSHBackend, 'check_fs_mounted', mock.Mock(
+            return_value=False))
+
+        self.assertRaises(
+            exception.HNASBackendException, self._driver._check_fs_mounted)
+
+        ssh.HNASSSHBackend.check_fs_mounted.assert_called_once_with()
 
     def test__update_share_stats(self):
         fake_data = {

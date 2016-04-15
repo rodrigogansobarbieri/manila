@@ -56,6 +56,11 @@ hds_hnas_opts = [
                default=30,
                help="The time (in seconds) to wait for stalled HNAS jobs "
                     "before aborting."),
+    cfg.BoolOpt('hds_hnas_auto_mount_filesystem',
+                default=True,
+                help="Whether to automatically mount the filesystem if the"
+                     "given filesystem is found to be unmounted in the "
+                     "backend."),
     cfg.StrOpt('hds_hnas_driver_helper',
                default='manila.share.drivers.hitachi.ssh.HNASSSHBackend',
                help="Python class to be used for driver helper."),
@@ -90,6 +95,8 @@ class HDSHNASDriver(driver.ShareDriver):
         hnas_evs_id = self.configuration.safe_get('hds_hnas_evs_id')
         self.hnas_evs_ip = self.configuration.safe_get('hds_hnas_evs_ip')
         self.fs_name = self.configuration.safe_get('hds_hnas_file_system_name')
+        self.automount_fs = self.configuration.safe_get(
+            'hds_hnas_auto_mount_filesystem')
         ssh_private_key = self.configuration.safe_get(
             'hds_hnas_ssh_private_key')
         cluster_admin_ip0 = self.configuration.safe_get(
@@ -479,10 +486,16 @@ class HDSHNASDriver(driver.ShareDriver):
                 LOG.exception(msg)
 
     def _check_fs_mounted(self):
-        if not self.hnas.check_fs_mounted():
+        mounted = self.hnas.check_fs_mounted()
+        if not mounted and self.automount_fs:
             LOG.debug("Filesystem %(fs)s is unmounted. Mounting...",
                       {'fs': self.fs_name})
             self.hnas.mount()
+        elif not mounted:
+            msg = _("Filesystem %s is not mounted.") % self.fs_name
+            raise exception.HNASBackendException(msg=msg)
+        else:
+            return
 
     def _ensure_share(self, share_id):
         """Ensure that share is exported.
