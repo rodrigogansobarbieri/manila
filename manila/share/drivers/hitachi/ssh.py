@@ -41,20 +41,19 @@ class HNASSSHBackend(object):
         self.priv_key = ssh_private_key
         self.admin_ip0 = cluster_admin_ip0
         self.evs_id = six.text_type(evs_id)
-        self.fs_name = fs_name
         self.evs_ip = evs_ip
         self.sshpool = None
         self.job_timeout = job_timeout
         LOG.debug("Hitachi HNAS Driver using SSH backend.")
 
-    def get_stats(self):
+    def get_fs_stats(self, fs_name):
         """Get the stats from file-system.
 
         :returns:
         fs_capacity.size = Total size from filesystem.
         available_space = Free space currently on filesystem.
         """
-        command = ['df', '-a', '-f', self.fs_name]
+        command = ['df', '-a', '-f', fs_name]
         output, err = self._execute(command)
 
         line = output.split('\n')
@@ -62,10 +61,10 @@ class HNASSSHBackend(object):
         available_space = fs.size - fs.used
         return fs.size, available_space
 
-    def nfs_export_add(self, share_id):
+    def nfs_export_add(self, share_id, fs_name):
         path = '/shares/' + share_id
         command = ['nfs-export', 'add', '-S', 'disable', '-c', '127.0.0.1',
-                   path, self.fs_name, path]
+                   path, fs_name, path]
         self._execute(command)
 
     def nfs_export_del(self, share_id):
@@ -103,9 +102,9 @@ class HNASSSHBackend(object):
         command.append(path)
         self._execute(command)
 
-    def tree_clone(self, src_path, dest_path):
-        command = ['tree-clone-job-submit', '-e', '-f', self.fs_name,
-                   src_path, dest_path]
+    def tree_clone(self, src_path, dest_path, fs_name):
+        command = ['tree-clone-job-submit', '-e', '-f',
+                   fs_name, src_path, dest_path]
         try:
             output, err = self._execute(command)
         except processutils.ProcessExecutionError as e:
@@ -172,9 +171,9 @@ class HNASSSHBackend(object):
                        src_path)
                 raise exception.HNASBackendException(msg=msg)
 
-    def tree_delete(self, path):
-        command = ['tree-delete-job-submit', '--confirm', '-f', self.fs_name,
-                   path]
+    def tree_delete(self, path, fs_name):
+        command = ['tree-delete-job-submit', '--confirm', '-f',
+                   fs_name, path]
         try:
             self._execute(command)
         except processutils.ProcessExecutionError as e:
@@ -192,20 +191,20 @@ class HNASSSHBackend(object):
     def delete_directory(self, path):
         self._locked_selectfs('delete', path)
 
-    def check_fs_mounted(self):
-        command = ['df', '-a', '-f', self.fs_name]
+    def check_fs_mounted(self, fs_name):
+        command = ['df', '-a', '-f', fs_name]
         output, err = self._execute(command)
         if "not found" in output:
-            msg = (_("Filesystem %s does not exist or it is not available "
-                     "in the current EVS context.") % self.fs_name)
+            msg = (_("Filesystem %s does not exist or it is not available in "
+                     "the current EVS context.") % fs_name)
             raise exception.HNASItemNotFoundException(msg=msg)
         else:
             line = output.split('\n')
             fs = Filesystem(line[3])
             return fs.mounted
 
-    def mount(self):
-        command = ['mount', self.fs_name]
+    def mount(self, fs_name):
+        command = ['mount', fs_name]
         try:
             self._execute(command)
         except processutils.ProcessExecutionError as e:
@@ -214,18 +213,18 @@ class HNASSSHBackend(object):
                 LOG.exception(msg)
                 raise e
 
-    def vvol_create(self, vvol_name):
+    def vvol_create(self, vvol_name, fs_name):
         # create a virtual-volume inside directory
         path = '/shares/' + vvol_name
-        command = ['virtual-volume', 'add', '--ensure', self.fs_name,
-                   vvol_name, path]
+        command = ['virtual-volume', 'add', '--ensure',
+                   fs_name, vvol_name, path]
         self._execute(command)
 
-    def vvol_delete(self, vvol_name):
+    def vvol_delete(self, vvol_name, fs_name):
         path = '/shares/' + vvol_name
         # Virtual-volume and quota are deleted together
         command = ['tree-delete-job-submit', '--confirm', '-f',
-                   self.fs_name, path]
+                   fs_name, path]
         try:
             self._execute(command)
         except processutils.ProcessExecutionError as e:
@@ -237,22 +236,22 @@ class HNASSSHBackend(object):
                 LOG.exception(msg)
                 raise e
 
-    def quota_add(self, vvol_name, vvol_quota):
+    def quota_add(self, vvol_name, vvol_quota, fs_name):
         str_quota = six.text_type(vvol_quota) + 'G'
         command = ['quota', 'add', '--usage-limit',
                    str_quota, '--usage-hard-limit',
-                   'yes', self.fs_name, vvol_name]
+                   'yes', fs_name, vvol_name]
         self._execute(command)
 
-    def modify_quota(self, vvol_name, new_size):
+    def modify_quota(self, vvol_name, new_size, fs_name):
         str_quota = six.text_type(new_size) + 'G'
         command = ['quota', 'mod', '--usage-limit', str_quota,
-                   self.fs_name, vvol_name]
+                   fs_name, vvol_name]
         self._execute(command)
 
-    def check_vvol(self, vvol_name):
-        command = ['virtual-volume', 'list', '--verbose', self.fs_name,
-                   vvol_name]
+    def check_vvol(self, vvol_name, fs_name):
+        command = ['virtual-volume', 'list', '--verbose',
+                   fs_name, vvol_name]
         try:
             self._execute(command)
         except processutils.ProcessExecutionError as e:
@@ -261,25 +260,26 @@ class HNASSSHBackend(object):
             msg = (_("Virtual volume %s does not exist.") % vvol_name)
             raise exception.HNASItemNotFoundException(msg=msg)
 
-    def check_quota(self, vvol_name):
-        command = ['quota', 'list', '--verbose', self.fs_name, vvol_name]
+    def check_quota(self, vvol_name, fs_name):
+        command = ['quota', 'list', '--verbose', fs_name,
+                   vvol_name]
         output, err = self._execute(command)
 
         if 'No quotas matching specified filter criteria' in output:
             msg = (_("Virtual volume %s does not have any quota.") % vvol_name)
             raise exception.HNASItemNotFoundException(msg=msg)
 
-    def check_export(self, vvol_name):
+    def check_export(self, vvol_name, fs_name):
         export = self._get_share_export(vvol_name)
         if (vvol_name in export[0].export_name and
-                self.fs_name in export[0].file_system_label):
+                fs_name in export[0].file_system_label):
             return
         else:
             msg = _("Export %s does not exist.") % export[0].export_name
             raise exception.HNASItemNotFoundException(msg=msg)
 
-    def get_share_quota(self, share_id):
-        command = ['quota', 'list', self.fs_name, share_id]
+    def get_share_quota(self, share_id, fs_name):
+        command = ['quota', 'list', fs_name, share_id]
         output, err = self._execute(command)
 
         quota = Quota(output)
@@ -296,8 +296,8 @@ class HNASSSHBackend(object):
                      "below 1G.") % share_id)
             raise exception.HNASBackendException(msg=msg)
 
-    def get_share_usage(self, share_id):
-        command = ['quota', 'list', self.fs_name, share_id]
+    def get_share_usage(self, share_id, fs_name):
+        command = ['quota', 'list', fs_name, share_id]
         output, err = self._execute(command)
 
         quota = Quota(output)
@@ -377,15 +377,15 @@ class HNASSSHBackend(object):
                     raise
 
     @mutils.synchronized("hds_hnas_select_fs", external=True)
-    def _locked_selectfs(self, op, path):
+    def _locked_selectfs(self, op, path, fs_name):
         if op == 'create':
-            command = ['selectfs', self.fs_name, '\n',
+            command = ['selectfs', fs_name, '\n',
                        'ssc', '127.0.0.1', 'console-context', '--evs',
                        self.evs_id, 'mkdir', '-p', path]
             self._execute(command)
 
         if op == 'delete':
-            command = ['selectfs', self.fs_name, '\n',
+            command = ['selectfs', fs_name, '\n',
                        'ssc', '127.0.0.1', 'console-context', '--evs',
                        self.evs_id, 'rmdir', path]
             try:
