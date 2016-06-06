@@ -602,7 +602,7 @@ class ShareManager(manager.SchedulerDependentManager):
 
     @utils.require_driver_initialized
     def migration_start(self, context, share_id, host, force_host_copy,
-                        notify=True):
+                        complete=True, preserve_metadata=True, writable=True):
         """Migrates a share from current host to another host."""
         LOG.debug("Entered migration_start method for share %s.", share_id)
 
@@ -635,8 +635,8 @@ class ShareManager(manager.SchedulerDependentManager):
                         constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS)})
 
                 moved, model_update = self.driver.migration_start(
-                    context, share_instance, share_server, host,
-                    dest_driver_migration_info, notify)
+                    context, share_instance, host, dest_driver_migration_info,
+                    complete, writable, preserve_metadata, share_server)
 
                 # NOTE(ganso): Here we are allowing the driver to perform
                 # changes even if it has not performed migration. While this
@@ -654,16 +654,25 @@ class ShareManager(manager.SchedulerDependentManager):
                                 "with generic migration approach.") % share_id)
 
         if not moved:
-            LOG.debug("Starting generic migration "
-                      "for share %s.", share_id)
-
-            self.db.share_update(
-                context, share_id,
-                {'task_state': constants.TASK_STATE_MIGRATION_IN_PROGRESS})
 
             try:
+
+                if writable or preserve_metadata:
+                    msg = _("Migration for share %s could not be "
+                            "performed because fallback migration is not "
+                            "allowed when share must remain writable or "
+                            "preserve all file metadata.") % share_id
+                    raise exception.ShareMigrationFailed(reason=msg)
+
+                LOG.debug("Starting generic migration "
+                          "for share %s.", share_id)
+
+                self.db.share_update(
+                    context, share_id,
+                    {'task_state': constants.TASK_STATE_MIGRATION_IN_PROGRESS})
+
                 self._migration_start_generic(context, share_ref,
-                                              share_instance, host, notify)
+                                              share_instance, host, complete)
             except Exception:
                 msg = _("Generic migration failed for share %s.") % share_id
                 LOG.exception(msg)
@@ -674,7 +683,7 @@ class ShareManager(manager.SchedulerDependentManager):
                     context, share_instance['id'],
                     {'status': constants.STATUS_AVAILABLE})
                 raise exception.ShareMigrationFailed(reason=msg)
-        elif not notify:
+        elif not complete:
             self.db.share_update(
                 context, share_ref['id'],
                 {'task_state':
@@ -692,7 +701,7 @@ class ShareManager(manager.SchedulerDependentManager):
                      " completed successfully."), share_ref['id'])
 
     def _migration_start_generic(self, context, share, share_instance, host,
-                                 notify):
+                                 complete):
 
         rpcapi = share_rpcapi.ShareAPI()
 
@@ -741,7 +750,7 @@ class ShareManager(manager.SchedulerDependentManager):
             data_rpc.migration_start(
                 context, share['id'], ignore_list, share_instance['id'],
                 new_share_instance['id'], src_migration_info,
-                dest_migration_info, notify)
+                dest_migration_info, complete)
 
         except Exception:
             msg = _("Failed to obtain migration info from backends or"
@@ -776,8 +785,8 @@ class ShareManager(manager.SchedulerDependentManager):
                     context, share_instance)
 
                 model_update = self.driver.migration_complete(
-                    context, share_instance, share_server,
-                    dest_driver_migration_info)
+                    context, share_instance, dest_driver_migration_info,
+                    share_server)
                 if model_update:
                     self.db.share_instance_update(
                         context, share_instance['id'], model_update)
@@ -902,8 +911,8 @@ class ShareManager(manager.SchedulerDependentManager):
                 context, share_ref.instance)
 
             self.driver.migration_cancel(
-                context, share_ref.instance, share_server,
-                driver_migration_info)
+                context, share_ref.instance, driver_migration_info,
+                share_server)
         else:
             msg = _("Driver is not performing migration for"
                     " share %s") % share_id
@@ -929,8 +938,8 @@ class ShareManager(manager.SchedulerDependentManager):
                 context, share_ref.instance)
 
             return self.driver.migration_get_progress(
-                context, share_ref.instance, share_server,
-                driver_migration_info)
+                context, share_ref.instance, driver_migration_info,
+                share_server)
         else:
             msg = _("Driver is not performing migration for"
                     " share %s") % share_id

@@ -18,6 +18,7 @@ Drivers for shares.
 
 """
 
+import six
 import time
 
 from oslo_config import cfg
@@ -77,7 +78,7 @@ share_opts = [
              "Items should be names (not including any path)."),
     cfg.StrOpt(
         'share_mount_template',
-        default='mount -vt %(proto)s %(export)s %(path)s',
+        default='mount -vt %(options)s %(proto)s %(export)s %(path)s',
         help="The template for mounting shares for this backend. Must specify "
              "the executable with all necessary parameters for the protocol "
              "supported. 'proto' template element may not be required if "
@@ -91,6 +92,18 @@ share_opts = [
              "specify the executable with all necessary parameters for the "
              "protocol supported. 'path' template element is required. It is "
              "advisable to separate different commands per backend."),
+    cfg.DictOpt(
+        'protocol_access_mapping',
+        default={
+            'ip': ['nfs'],
+            'user': ['cifs', 'hdfs'],
+            'cert': ['glusterfs'],
+            'cephx': ['cephfs']
+        },
+        help="Protocol access mapping for this backend. Should be a "
+             "dictionary comprised of "
+             "{'access_type1': ['share_proto1', 'share_proto2'],"
+             " 'access_type2': ['share_proto2', 'share_proto3']}."),
     cfg.BoolOpt(
         'migration_readonly_rules_support',
         default=True,
@@ -309,8 +322,9 @@ class ShareDriver(object):
                 {'actual': self.driver_handles_share_servers,
                  'allowed': driver_handles_share_servers})
 
-    def migration_start(self, context, share_ref, share_server, host,
-                        dest_driver_migration_info, notify):
+    def migration_start(self, context, share_ref, host,
+                        dest_driver_migration_info, complete, writable,
+                        preserve_metadata, share_server=None):
         """Is called to perform 1st phase of driver migration of a given share.
 
         Driver should implement this method if willing to perform migration
@@ -318,21 +332,25 @@ class ShareDriver(object):
         backend.
         :param context: The 'context.RequestContext' object for the request.
         :param share_ref: Reference to the share being migrated.
-        :param share_server: Share server model or None.
         :param host: Destination host and its capabilities.
         :param dest_driver_migration_info: Migration information provided by
         destination host.
-        :param notify: whether the migration should complete or wait for
+        :param complete: whether the migration should complete or wait for
         2nd phase call. Driver may throw exception when validating this
         parameter, exception if does not support 1-phase or 2-phase approach.
+        :param writable: whether the user requires the share to remain
+        writable.
+        :param preserve_metadata: whether the user has required the migration
+        to preserve all file metadata.
+        :param share_server: Share server model or None.
         :returns: Boolean value indicating if driver migration succeeded.
         :returns: Dictionary containing a model update with relevant data to
         be updated after migration, such as export locations.
         """
         return None, None
 
-    def migration_complete(self, context, share_ref, share_server,
-                           dest_driver_migration_info):
+    def migration_complete(self, context, share_ref,
+                           dest_driver_migration_info, share_server=None):
         """Is called to perform 2nd phase of driver migration of a given share.
 
         If driver is implementing 2-phase migration, this method should
@@ -340,45 +358,45 @@ class ShareDriver(object):
         it.
         :param context: The 'context.RequestContext' object for the request.
         :param share_ref: Reference to the share being migrated.
-        :param share_server: Share server model or None.
         :param dest_driver_migration_info: Migration information provided by
         destination host.
+        :param share_server: Share server model or None.
         :returns: Dictionary containing a model update with relevant data to
         be updated after migration, such as export locations.
         """
         return None
 
-    def migration_cancel(self, context, share_ref, share_server,
-                         dest_driver_migration_info):
+    def migration_cancel(self, context, share_ref, dest_driver_migration_info,
+                         share_server=None):
         """Is called to cancel driver migration.
 
         If possible, driver can implement a way to cancel an in-progress
         migration.
         :param context: The 'context.RequestContext' object for the request.
         :param share_ref: Reference to the share being migrated.
-        :param share_server: Share server model or None.
         :param dest_driver_migration_info: Migration information provided by
         destination host.
+        :param share_server: Share server model or None.
         """
         raise NotImplementedError()
 
-    def migration_get_progress(self, context, share_ref, share_server,
-                               dest_driver_migration_info):
+    def migration_get_progress(self, context, share_ref,
+                               dest_driver_migration_info, share_server=None):
         """Is called to get migration progress.
 
         If possible, driver can implement a way to return migration progress
         information.
         :param context: The 'context.RequestContext' object for the request.
         :param share_ref: Reference to the share being migrated.
-        :param share_server: Share server model or None.
         :param dest_driver_migration_info: Migration information provided by
         destination host.
+        :param share_server: Share server model or None.
         :return: A dictionary with 'total_progress' field containing the
         percentage value.
         """
         raise NotImplementedError()
 
-    def migration_get_driver_info(self, context, share, share_server):
+    def migration_get_driver_info(self, context, share, share_server=None):
         """Is called to provide necessary driver migration logic.
 
         :param context: The 'context.RequestContext' object for the request.
@@ -388,7 +406,7 @@ class ShareDriver(object):
         """
         return None
 
-    def migration_get_info(self, context, share, share_server):
+    def migration_get_info(self, context, share, share_server=None):
         """Is called to provide necessary generic migration logic.
 
         :param context: The 'context.RequestContext' object for the request.
@@ -401,8 +419,27 @@ class ShareDriver(object):
         unmount_template = self._get_unmount_command(context, share,
                                                      share_server)
 
-        return {'mount': mount_template,
-                'unmount': unmount_template}
+        access_mapping = self._get_access_mapping(context, share, share_server)
+
+        info = {'mount': mount_template,
+                'unmount': unmount_template,
+                'access_mapping': access_mapping}
+
+        LOG.debug("Migration info obtained for share %(share_id)s: %(info)s.",
+                  {'share_id': share['id'], 'info': six.text_type(info)})
+
+        return info
+
+    def _get_access_mapping(self, context, share, share_server):
+
+        mapping = self.configuration.safe_get('protocol_access_mapping')
+        result = {}
+        share_proto = share['share_proto'].lower()
+        for access_type, protocols in six.iteritems(mapping):
+            if share_proto in [y.lower() for y in protocols]:
+                result[access_type] = result.get(access_type, [])
+                result[access_type].append(share_proto)
+        return result
 
     def _get_mount_command(self, context, share_instance, share_server):
         """Is called to delegate mounting share logic."""
@@ -413,7 +450,8 @@ class ShareDriver(object):
 
         format_template = {'proto': share_instance['share_proto'].lower(),
                            'export': mount_export,
-                           'path': '%(path)s'}
+                           'path': '%(path)s',
+                           'options': '%(options)s'}
 
         return mount_template % format_template
 

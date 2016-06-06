@@ -17,6 +17,8 @@ import os
 from oslo_log import log
 import six
 
+from manila import exception
+from manila.i18n import _
 from manila import utils
 
 LOG = log.getLogger(__name__)
@@ -130,8 +132,15 @@ class Copy(object):
                 utils.execute("cp", "-P", "--preserve=all", src_item,
                               dest_item, run_as_root=True)
 
-                self.current_size += int(size)
+                try:
+                    _validate_item(src_item, dest_item)
+                except exception.ShareDataCopyFailed:
+                    # NOTE(ganso): try again at most one more time.
+                    utils.execute("cp", "-P", "--preserve=all", src_item,
+                                  dest_item, run_as_root=True)
+                    _validate_item(src_item, dest_item)
 
+                self.current_size += int(size)
                 LOG.info(six.text_type(self.get_progress()))
 
     def copy_stats(self, path):
@@ -158,3 +167,13 @@ class Copy(object):
                               run_as_root=True)
                 utils.execute("chown", "--reference=%s" % src_item, dest_item,
                               run_as_root=True)
+
+
+def _validate_item(src_item, dest_item):
+    src_sum, err = utils.execute(
+        "sha256sum", "%s" % src_item, run_as_root=True)
+    dest_sum, err = utils.execute(
+        "sha256sum", "%s" % dest_item, run_as_root=True)
+    if src_sum.split()[0] != dest_sum.split()[0]:
+        msg = _("Data corrupted while copying. Aborting data copy.")
+        raise exception.ShareDataCopyFailed(reason=msg)

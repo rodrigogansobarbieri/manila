@@ -66,13 +66,14 @@ REST_API_VERSION_HISTORY = """
             'migrate_share' to 'migration_start' and added notify parameter
              to 'migration_start'.
     * 2.16 - Add user_id in share show/create/manage API.
+    * 2.18 - Updated migration_start API with additional parameters.
 """
 
 # The minimum and maximum versions of the API supported
 # The default api version request is defined to be the
 # the minimum version of the API supported.
 _MIN_API_VERSION = "2.0"
-_MAX_API_VERSION = "2.16"
+_MAX_API_VERSION = "2.18"
 DEFAULT_API_VERSION = _MIN_API_VERSION
 
 

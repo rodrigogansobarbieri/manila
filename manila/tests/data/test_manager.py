@@ -41,7 +41,7 @@ class DataManagerTestCase(test.TestCase):
         self.context = context.get_admin_context()
         self.topic = 'fake_topic'
         self.share = db_utils.create_share()
-        manager.CONF.set_default('migration_tmp_location', '/tmp/')
+        manager.CONF.set_default('mount_tmp_location', '/tmp/')
 
     def test_init(self):
         manager = self.manager
@@ -71,18 +71,17 @@ class DataManagerTestCase(test.TestCase):
             utils.IsAMatcher(context.RequestContext), share['id'],
             {'task_state': constants.TASK_STATE_DATA_COPYING_ERROR})
 
-    @ddt.data({'notify': True, 'exc': None},
-              {'notify': False, 'exc': None},
-              {'notify': 'fake',
+    @ddt.data({'complete': True, 'exc': None},
+              {'complete': False, 'exc': None},
+              {'complete': 'fake',
                'exc': exception.ShareDataCopyCancelled(src_instance='ins1',
                                                        dest_instance='ins2')},
-              {'notify': 'fake', 'exc': Exception('fake')})
+              {'complete': 'fake', 'exc': Exception('fake')})
     @ddt.unpack
-    def test_migration_start(self, notify, exc):
+    def test_migration_start(self, complete, exc):
 
         # mocks
         self.mock_object(db, 'share_get', mock.Mock(return_value=self.share))
-
         self.mock_object(data_utils, 'Copy',
                          mock.Mock(return_value='fake_copy'))
 
@@ -102,12 +101,12 @@ class DataManagerTestCase(test.TestCase):
         if exc is None or isinstance(exc, exception.ShareDataCopyCancelled):
             self.manager.migration_start(
                 self.context, [], self.share['id'],
-                'ins1_id', 'ins2_id', 'info_src', 'info_dest', notify)
+                'ins1_id', 'ins2_id', 'info_src', 'info_dest', complete)
         else:
             self.assertRaises(
                 exception.ShareDataCopyFailed, self.manager.migration_start,
                 self.context, [], self.share['id'], 'ins1_id', 'ins2_id',
-                'info_src', 'info_dest', notify)
+                'info_src', 'info_dest', complete)
 
             db.share_update.assert_called_once_with(
                 self.context, self.share['id'],
@@ -120,7 +119,7 @@ class DataManagerTestCase(test.TestCase):
             self.context, 'fake_copy', self.share, 'ins1_id', 'ins2_id',
             'info_src', 'info_dest')
 
-        if notify or exc:
+        if complete or exc:
             share_rpc.ShareAPI.migration_complete.assert_called_once_with(
                 self.context, self.share, 'ins1_id', 'ins2_id')
 
@@ -143,10 +142,12 @@ class DataManagerTestCase(test.TestCase):
         fake_copy = mock.MagicMock(cancelled=cancelled)
 
         self.mock_object(db, 'share_update')
-
+        self.mock_object(db, 'share_instance_get',
+                         mock.Mock(side_effect=[self.share['instance'],
+                                                self.share['instance']]))
         self.mock_object(helper.DataServiceHelper,
                          'allow_access_to_data_service',
-                         mock.Mock(return_value=access))
+                         mock.Mock(return_value=[access]))
 
         self.mock_object(helper.DataServiceHelper, 'mount_share_instance')
 
@@ -220,12 +221,16 @@ class DataManagerTestCase(test.TestCase):
 
         db.share_update.assert_has_calls(update_list)
 
-        helper.DataServiceHelper.allow_access_to_data_service.\
-            assert_called_once_with(self.share, 'ins1_id', 'ins2_id')
+        (helper.DataServiceHelper.allow_access_to_data_service.
+            assert_called_once_with(
+                self.share['instance'], migration_info_src,
+                self.share['instance'], migration_info_dest))
 
         helper.DataServiceHelper.mount_share_instance.assert_has_calls([
-            mock.call(migration_info_src['mount'], '/tmp/', 'ins1_id'),
-            mock.call(migration_info_dest['mount'], '/tmp/', 'ins2_id')])
+            mock.call(migration_info_src['mount'], '/tmp/',
+                      self.share['instance']),
+            mock.call(migration_info_dest['mount'], '/tmp/',
+                      self.share['instance'])])
 
         fake_copy.run.assert_called_once_with()
         if exc is None:
@@ -236,7 +241,8 @@ class DataManagerTestCase(test.TestCase):
             mock.call(migration_info_dest['unmount'], '/tmp/', 'ins2_id')])
 
         helper.DataServiceHelper.deny_access_to_data_service.assert_has_calls([
-            mock.call(access, 'ins1_id'), mock.call(access, 'ins2_id')])
+            mock.call([access], self.share['instance']),
+            mock.call([access], self.share['instance'])])
 
     def test__copy_share_data_exception_access(self):
 
@@ -249,6 +255,9 @@ class DataManagerTestCase(test.TestCase):
 
         # mocks
         self.mock_object(db, 'share_update')
+        self.mock_object(db, 'share_instance_get',
+                         mock.Mock(side_effect=[self.share['instance'],
+                                                self.share['instance']]))
 
         self.mock_object(
             helper.DataServiceHelper, 'allow_access_to_data_service',
@@ -268,8 +277,10 @@ class DataManagerTestCase(test.TestCase):
             self.context, self.share['id'],
             {'task_state': constants.TASK_STATE_DATA_COPYING_STARTING})
 
-        helper.DataServiceHelper.allow_access_to_data_service.\
-            assert_called_once_with(self.share, 'ins1_id', 'ins2_id')
+        (helper.DataServiceHelper.allow_access_to_data_service.
+            assert_called_once_with(
+                self.share['instance'], migration_info_src,
+                self.share['instance'], migration_info_dest))
 
     def test__copy_share_data_exception_mount_1(self):
 
@@ -284,10 +295,13 @@ class DataManagerTestCase(test.TestCase):
 
         # mocks
         self.mock_object(db, 'share_update')
+        self.mock_object(db, 'share_instance_get',
+                         mock.Mock(side_effect=[self.share['instance'],
+                                                self.share['instance']]))
 
         self.mock_object(helper.DataServiceHelper,
                          'allow_access_to_data_service',
-                         mock.Mock(return_value=access))
+                         mock.Mock(return_value=[access]))
 
         self.mock_object(helper.DataServiceHelper, 'mount_share_instance',
                          mock.Mock(side_effect=Exception('fake')))
@@ -306,17 +320,19 @@ class DataManagerTestCase(test.TestCase):
             self.context, self.share['id'],
             {'task_state': constants.TASK_STATE_DATA_COPYING_STARTING})
 
-        helper.DataServiceHelper.allow_access_to_data_service.\
-            assert_called_once_with(self.share, 'ins1_id', 'ins2_id')
+        (helper.DataServiceHelper.allow_access_to_data_service.
+            assert_called_once_with(
+                self.share['instance'], migration_info_src,
+                self.share['instance'], migration_info_dest))
 
         helper.DataServiceHelper.mount_share_instance.assert_called_once_with(
-            migration_info_src['mount'], '/tmp/', 'ins1_id')
+            migration_info_src['mount'], '/tmp/', self.share['instance'])
 
         helper.DataServiceHelper.cleanup_temp_folder.assert_called_once_with(
             'ins1_id', '/tmp/')
 
         helper.DataServiceHelper.cleanup_data_access.assert_has_calls([
-            mock.call(access, 'ins2_id'), mock.call(access, 'ins1_id')])
+            mock.call([access], 'ins2_id'), mock.call([access], 'ins1_id')])
 
     def test__copy_share_data_exception_mount_2(self):
 
@@ -331,10 +347,13 @@ class DataManagerTestCase(test.TestCase):
 
         # mocks
         self.mock_object(db, 'share_update')
+        self.mock_object(db, 'share_instance_get',
+                         mock.Mock(side_effect=[self.share['instance'],
+                                                self.share['instance']]))
 
         self.mock_object(helper.DataServiceHelper,
                          'allow_access_to_data_service',
-                         mock.Mock(return_value=access))
+                         mock.Mock(return_value=[access]))
 
         self.mock_object(helper.DataServiceHelper, 'mount_share_instance',
                          mock.Mock(side_effect=[None, Exception('fake')]))
@@ -355,22 +374,26 @@ class DataManagerTestCase(test.TestCase):
             self.context, self.share['id'],
             {'task_state': constants.TASK_STATE_DATA_COPYING_STARTING})
 
-        helper.DataServiceHelper.allow_access_to_data_service.\
-            assert_called_once_with(self.share, 'ins1_id', 'ins2_id')
+        (helper.DataServiceHelper.allow_access_to_data_service.
+            assert_called_once_with(
+                self.share['instance'], migration_info_src,
+                self.share['instance'], migration_info_dest))
 
         helper.DataServiceHelper.mount_share_instance.assert_has_calls([
-            mock.call(migration_info_src['mount'], '/tmp/', 'ins1_id'),
-            mock.call(migration_info_dest['mount'], '/tmp/', 'ins2_id')])
+            mock.call(migration_info_src['mount'], '/tmp/',
+                      self.share['instance']),
+            mock.call(migration_info_dest['mount'], '/tmp/',
+                      self.share['instance'])])
 
-        helper.DataServiceHelper.cleanup_unmount_temp_folder.\
+        (helper.DataServiceHelper.cleanup_unmount_temp_folder.
             assert_called_once_with(
-                migration_info_src['unmount'], '/tmp/', 'ins1_id')
+                migration_info_src['unmount'], '/tmp/', 'ins1_id'))
 
         helper.DataServiceHelper.cleanup_temp_folder.assert_has_calls([
             mock.call('ins2_id', '/tmp/'), mock.call('ins1_id', '/tmp/')])
 
         helper.DataServiceHelper.cleanup_data_access.assert_has_calls([
-            mock.call(access, 'ins2_id'), mock.call(access, 'ins1_id')])
+            mock.call([access], 'ins2_id'), mock.call([access], 'ins1_id')])
 
     def test_data_copy_cancel(self):
 

@@ -254,7 +254,9 @@ class ShareRpcAPITestCase(test.TestCase):
                              share=self.fake_share,
                              dest_host=fake_dest_host,
                              force_host_copy=True,
-                             notify=True)
+                             complete=True,
+                             preserve_metadata=True,
+                             writable=True)
 
     def test_migration_get_info(self):
         self._test_share_api('migration_get_info',

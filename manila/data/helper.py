@@ -15,6 +15,7 @@
 """Helper class for Data Service operations."""
 
 import os
+import six
 
 from oslo_config import cfg
 from oslo_log import log
@@ -35,14 +36,22 @@ data_helper_opts = [
              "when migrating a share (seconds)."),
     cfg.StrOpt(
         'data_node_access_ip',
-        default=None,
         help="The IP of the node interface connected to the admin network. "
              "Used for allowing access to the mounting shares."),
     cfg.StrOpt(
         'data_node_access_cert',
-        default=None,
         help="The certificate installed in the data node in order to "
              "allow access to certificate authentication-based shares."),
+    cfg.StrOpt(
+        'data_node_access_admin_user',
+        help="The admin user name registered in the security service in order "
+             "to allow access to user authentication-based shares."),
+    cfg.DictOpt(
+        'data_node_mount_options',
+        default={},
+        help="Mount options to be included in the mount command for share "
+             "protocols. Use dictionary format, see example: "
+             "{'nfs': '-o nfsvers=3', 'cifs': -o user=foo,pass=bar}"),
 
 ]
 
@@ -61,46 +70,20 @@ class DataServiceHelper(object):
         self.wait_access_rules_timeout = (
             CONF.data_access_wait_access_rules_timeout)
 
-    def _allow_data_access(self, access, share_instance_id,
-                           dest_share_instance_id=None):
+    def deny_access_to_data_service(self, access_ref_list, share_instance):
 
-        values = {
-            'share_id': self.share['id'],
-            'access_type': access['access_type'],
-            'access_level': access['access_level'],
-            'access_to': access['access_to']
-        }
-
-        share_access_list = self.db.share_access_get_all_by_type_and_access(
-            self.context, self.share['id'], access['access_type'],
-            access['access_to'])
-
-        for access in share_access_list:
+        for access_ref in access_ref_list:
             self._change_data_access_to_instance(
-                share_instance_id, access, allow=False)
-
-        access_ref = self.db.share_access_create(self.context, values)
-
-        self._change_data_access_to_instance(
-            share_instance_id, access_ref, allow=True)
-        if dest_share_instance_id:
-            self._change_data_access_to_instance(
-                dest_share_instance_id, access_ref, allow=True)
-
-        return access_ref
-
-    def deny_access_to_data_service(self, access_ref, share_instance_id):
-
-        self._change_data_access_to_instance(
-            share_instance_id, access_ref, allow=False)
+                share_instance, access_ref, allow=False)
 
     # NOTE(ganso): Cleanup methods do not throw exceptions, since the
     # exceptions that should be thrown are the ones that call the cleanup
 
-    def cleanup_data_access(self, access_ref, share_instance_id):
+    def cleanup_data_access(self, access_ref_list, share_instance_id):
 
         try:
-            self.deny_access_to_data_service(access_ref, share_instance_id)
+            self.deny_access_to_data_service(
+                access_ref_list, share_instance_id)
         except Exception:
             LOG.warning(_LW("Could not cleanup access rule of share %s."),
                         self.share['id'])
@@ -133,13 +116,10 @@ class DataServiceHelper(object):
                                 'share_id': self.share['id']})
 
     def _change_data_access_to_instance(
-            self, instance_id, access_ref, allow=False):
+            self, instance, access_ref, allow=False):
 
         self.db.share_instance_update_access_status(
-            self.context, instance_id, constants.STATUS_OUT_OF_SYNC)
-
-        instance = self.db.share_instance_get(
-            self.context, instance_id, with_share_data=True)
+            self.context, instance['id'], constants.STATUS_OUT_OF_SYNC)
 
         if allow:
             self.share_rpc.allow_access(self.context, instance, access_ref)
@@ -149,39 +129,86 @@ class DataServiceHelper(object):
         utils.wait_for_access_update(
             self.context, self.db, instance, self.wait_access_rules_timeout)
 
-    def allow_access_to_data_service(self, share, share_instance_id,
-                                     dest_share_instance_id):
+    def allow_access_to_data_service(
+            self, share_instance, migration_info_src, dest_share_instance=None,
+            migration_info_dest=None):
 
-        if share['share_proto'].upper() == 'GLUSTERFS':
-
-            access_to = CONF.data_node_access_cert
-            access_type = 'cert'
-
-            if not access_to:
-                msg = _("Data Node Certificate not specified. Cannot mount "
-                        "instances for data copy of share %(share_id)s. "
-                        "Aborting.") % {'share_id': share['id']}
-                raise exception.ShareDataCopyFailed(reason=msg)
-
+        # NOTE(ganso): intersect the access type compatible with both instances
+        if dest_share_instance and migration_info_dest:
+            access_mapping = {}
+            for a_type, protocols in (
+                    six.iteritems(migration_info_src['access_mapping'])):
+                for proto in protocols:
+                    if (a_type in migration_info_dest['access_mapping']
+                            and proto in
+                            migration_info_dest['access_mapping'][a_type]):
+                        access_mapping[a_type] = access_mapping.get(proto, [])
+                        access_mapping[a_type].append(a_type)
         else:
+            access_mapping = migration_info_src['access_mapping']
 
-            access_to = CONF.data_node_access_ip
-            access_type = 'ip'
+        access_list = self._get_access_entries_according_to_mapping(
+            access_mapping)
+        access_ref_list = []
 
+        for access in access_list:
+
+            values = {
+                'share_id': self.share['id'],
+                'access_type': access['access_type'],
+                'access_level': access['access_level'],
+                'access_to': access['access_to']
+            }
+
+            old_access_list = self.db.share_access_get_all_by_type_and_access(
+                self.context, self.share['id'], access['access_type'],
+                access['access_to'])
+
+            for old_access in old_access_list:
+                self._change_data_access_to_instance(
+                    share_instance, old_access, allow=False)
+
+            access_ref = self.db.share_access_create(self.context, values)
+
+            self._change_data_access_to_instance(
+                share_instance, access_ref, allow=True)
+            if dest_share_instance and migration_info_dest:
+                self._change_data_access_to_instance(
+                    dest_share_instance, access_ref, allow=True)
+
+            access_ref_list.append(access_ref)
+
+        return access_ref_list
+
+    def _get_access_entries_according_to_mapping(self, access_mapping):
+
+        access_list = []
+
+        for access_type, protocols in six.iteritems(access_mapping):
+            if access_type.lower() == 'cert':
+                access_to = CONF.data_node_access_cert
+            elif access_type.lower() == 'ip':
+                access_to = CONF.data_node_access_ip
+            elif access_type.lower() == 'user':
+                access_to = CONF.data_node_access_admin_user
+            elif access_type.lower() == 'cephx':
+                msg = _("Data copy of CephFS shares is not currently "
+                        "supported.")
+                raise exception.ShareDataCopyFailed(reason=msg)
+            else:
+                msg = _("Unsupported access type provided: %s.") % access_type
+                raise exception.ShareDataCopyFailed(reason=msg)
             if not access_to:
-                msg = _("Data Node Admin Network IP not specified. Cannot "
-                        "mount instances for data copy of share %(share_id)s. "
-                        "Aborting.") % {'share_id': share['id']}
+                msg = _("Configuration for Data node mounting access type %s "
+                        "has not been set.") % access_type
                 raise exception.ShareDataCopyFailed(reason=msg)
 
-        access = {'access_type': access_type,
-                  'access_level': constants.ACCESS_LEVEL_RW,
-                  'access_to': access_to}
+            access = {'access_type': access_type,
+                      'access_level': constants.ACCESS_LEVEL_RW,
+                      'access_to': access_to}
+            access_list.append(access)
 
-        access_ref = self._allow_data_access(access, share_instance_id,
-                                             dest_share_instance_id)
-
-        return access_ref
+        return access_list
 
     @utils.retry(exception.NotFound, 0.1, 10, 0.1)
     def _check_dir_exists(self, path):
@@ -194,15 +221,23 @@ class DataServiceHelper(object):
             raise exception.Found("Folder %s was found." % path)
 
     def mount_share_instance(self, mount_template, mount_path,
-                             share_instance_id):
+                             share_instance):
 
-        path = os.path.join(mount_path, share_instance_id)
+        path = os.path.join(mount_path, share_instance['id'])
+
+        options = CONF.data_node_mount_options
+        options = {k.lower(): v for k, v in six.iteritems(options)}
+        proto_options = options.get(share_instance['share_proto'].lower())
+
+        if not proto_options:
+            proto_options = ''
 
         if not os.path.exists(path):
             os.makedirs(path)
         self._check_dir_exists(path)
 
-        mount_command = mount_template % {'path': path}
+        mount_command = mount_template % {'path': path,
+                                          'options': proto_options}
 
         utils.execute(*(mount_command.split()), run_as_root=True)
 

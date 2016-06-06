@@ -875,7 +875,7 @@ class API(base.Base):
         return snapshot
 
     def migration_start(self, context, share, host, force_host_copy,
-                        notify=True):
+                        complete=True, preserve_metadata=True, writable=True):
         """Migrates share to a new host."""
 
         share_instance = share.instance
@@ -932,16 +932,9 @@ class API(base.Base):
 
         request_spec = self._get_request_spec_dict(share, share_type)
 
-        try:
-            self.scheduler_rpcapi.migrate_share_to_host(context, share['id'],
-                                                        host, force_host_copy,
-                                                        notify, request_spec)
-        except Exception:
-            msg = _('Destination host %(dest_host)s did not pass validation '
-                    'for migration of share %(share)s.') % {
-                'dest_host': host,
-                'share': share['id']}
-            raise exception.InvalidHost(reason=msg)
+        self.scheduler_rpcapi.migrate_share_to_host(
+            context, share['id'], host, force_host_copy, complete,
+            preserve_metadata, writable, request_spec)
 
     def migration_complete(self, context, share):
 

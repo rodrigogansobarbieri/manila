@@ -35,9 +35,11 @@ LOG = log.getLogger(__name__)
 
 data_opts = [
     cfg.StrOpt(
-        'migration_tmp_location',
+        'mount_tmp_location',
         default='/tmp/',
+        deprecated_name='migration_tmp_location',
         help="Temporary path to create and mount shares during migration."),
+
 ]
 
 CONF = cfg.CONF
@@ -64,7 +66,7 @@ class DataManager(manager.Manager):
 
     def migration_start(self, context, ignore_list, share_id,
                         share_instance_id, dest_share_instance_id,
-                        migration_info_src, migration_info_dest, notify):
+                        migration_info_src, migration_info_dest, complete):
 
         LOG.info(_LI(
             "Received request to migrate share content from share instance "
@@ -76,7 +78,7 @@ class DataManager(manager.Manager):
 
         share_rpcapi = share_rpc.ShareAPI()
 
-        mount_path = CONF.migration_tmp_location
+        mount_path = CONF.mount_tmp_location
 
         try:
             copy = data_utils.Copy(
@@ -112,7 +114,7 @@ class DataManager(manager.Manager):
             {'instance_id': share_instance_id,
              'dest_instance_id': dest_share_instance_id})
 
-        if notify:
+        if complete:
             LOG.info(_LI(
                 "Notifying source backend that migrating share content from"
                 " share instance %(instance_id)s to instance "
@@ -124,7 +126,7 @@ class DataManager(manager.Manager):
                 context, share_ref, share_instance_id, dest_share_instance_id)
 
     def data_copy_cancel(self, context, share_id):
-        LOG.info(_LI("Received request to cancel share migration "
+        LOG.info(_LI("Received request to cancel data copy "
                      "of share %s."), share_id)
         copy = self.busy_tasks_shares.get(share_id)
         if copy:
@@ -136,12 +138,12 @@ class DataManager(manager.Manager):
             raise exception.InvalidShare(reason=msg)
 
     def data_copy_get_progress(self, context, share_id):
-        LOG.info(_LI("Received request to get share migration information "
+        LOG.info(_LI("Received request to get data copy information "
                      "of share %s."), share_id)
         copy = self.busy_tasks_shares.get(share_id)
         if copy:
             result = copy.get_progress()
-            LOG.info(_LI("Obtained following share migration information "
+            LOG.info(_LI("Obtained following data copy information "
                          "of share %(share)s: %(info)s."),
                      {'share': share_id,
                       'info': six.text_type(result)})
@@ -157,7 +159,12 @@ class DataManager(manager.Manager):
             dest_share_instance_id, migration_info_src, migration_info_dest):
 
         copied = False
-        mount_path = CONF.migration_tmp_location
+        mount_path = CONF.mount_tmp_location
+
+        share_instance = self.db.share_instance_get(
+            context, share_instance_id, with_share_data=True)
+        dest_share_instance = self.db.share_instance_get(
+            context, dest_share_instance_id, with_share_data=True)
 
         self.db.share_update(
             context, src_share['id'],
@@ -166,9 +173,10 @@ class DataManager(manager.Manager):
         helper_src = helper.DataServiceHelper(context, self.db, src_share)
         helper_dest = helper_src
 
-        access_ref_src = helper_src.allow_access_to_data_service(
-            src_share, share_instance_id, dest_share_instance_id)
-        access_ref_dest = access_ref_src
+        access_ref_list_src = helper_src.allow_access_to_data_service(
+            share_instance, migration_info_src, dest_share_instance,
+            migration_info_dest)
+        access_ref_list_dest = access_ref_list_src
 
         def _call_cleanups(items):
             for item in items:
@@ -183,16 +191,16 @@ class DataManager(manager.Manager):
                     helper_dest.cleanup_temp_folder(dest_share_instance_id,
                                                     mount_path)
                 elif 'access_src' == item:
-                    helper_src.cleanup_data_access(access_ref_src,
+                    helper_src.cleanup_data_access(access_ref_list_src,
                                                    share_instance_id)
                 elif 'access_dest' == item:
-                    helper_dest.cleanup_data_access(access_ref_dest,
+                    helper_dest.cleanup_data_access(access_ref_list_dest,
                                                     dest_share_instance_id)
         try:
             helper_src.mount_share_instance(
-                migration_info_src['mount'], mount_path, share_instance_id)
+                migration_info_src['mount'], mount_path, share_instance)
         except Exception:
-            msg = _("Share migration failed attempting to mount "
+            msg = _("Data copy failed attempting to mount "
                     "share instance %s.") % share_instance_id
             LOG.exception(msg)
             _call_cleanups(['temp_folder_src', 'access_dest', 'access_src'])
@@ -201,9 +209,9 @@ class DataManager(manager.Manager):
         try:
             helper_dest.mount_share_instance(
                 migration_info_dest['mount'], mount_path,
-                dest_share_instance_id)
+                dest_share_instance)
         except Exception:
-            msg = _("Share migration failed attempting to mount "
+            msg = _("Data copy failed attempting to mount "
                     "share instance %s.") % dest_share_instance_id
             LOG.exception(msg)
             _call_cleanups(['temp_folder_dest', 'unmount_src',
@@ -249,14 +257,14 @@ class DataManager(manager.Manager):
 
         try:
             helper_src.deny_access_to_data_service(
-                access_ref_src, share_instance_id)
+                access_ref_list_src, share_instance)
         except Exception:
             LOG.exception(_LE("Could not deny access to instance"
                           " %s after its data copy."), share_instance_id)
 
         try:
             helper_dest.deny_access_to_data_service(
-                access_ref_dest, dest_share_instance_id)
+                access_ref_list_dest, dest_share_instance)
         except Exception:
             LOG.exception(_LE("Could not deny access to instance"
                           " %s after its data copy."), dest_share_instance_id)
