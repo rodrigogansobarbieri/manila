@@ -34,7 +34,7 @@ ShareGroup = [
                help="The minimum api microversion is configured to be the "
                     "value of the minimum microversion supported by Manila."),
     cfg.StrOpt("max_api_microversion",
-               default="2.18",
+               default="2.19",
                help="The maximum api microversion is configured to be the "
                     "value of the latest microversion supported by Manila."),
     cfg.StrOpt("region",
@@ -159,9 +159,12 @@ ShareGroup = [
                 help="Defines whether to run replication tests or not. "
                      "Enable this feature if the driver is configured "
                      "for replication."),
-    cfg.BoolOpt("run_migration_tests",
+    cfg.BoolOpt("run_fallback_migration_tests",
                 default=False,
-                help="Enable or disable migration tests."),
+                help="Enable or disable fallback migration tests."),
+    cfg.BoolOpt("run_optimized_migration_tests",
+                default=False,
+                help="Enable or disable optimized migration tests."),
     cfg.BoolOpt("run_manage_unmanage_tests",
                 default=False,
                 help="Defines whether to run manage/unmanage tests or not. "

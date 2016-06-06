@@ -118,3 +118,7 @@ user documentation.
 2.18
 ----
   Add gateway in share network show API.
+
+2.19
+----
+  Updated migration_start API with additional parameters.

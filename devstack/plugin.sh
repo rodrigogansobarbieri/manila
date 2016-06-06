@@ -690,7 +690,7 @@ function update_tempest {
 
 function install_libraries {
     if [ $(trueorfalse False MANILA_MULTI_BACKEND) == True ]; then
-        if [ $(trueorfalse True RUN_MANILA_MIGRATION_TESTS) == True ]; then
+        if [ $(trueorfalse True RUN_MANILA_FALLBACK_MIGRATION_TESTS) == True ]; then
             if is_ubuntu; then
                 install_package nfs-common
             else

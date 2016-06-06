@@ -1,0 +1,21 @@
+---
+prelude: >
+  - Added new parameters to Share Migration experimental API and
+    more combinations of share protocols and access types support
+    to the Data Service.
+features:
+  - Share Migration now has parameters to force share migration
+    procedure to maintain the share writable and to preserve its
+    metadata when migrating.
+  - Added CIFS, CEPHFS and HDFS protocol support to Data Service,
+    along with respective 'user' and 'cephx' access type support.
+  - Admin can now change share's share network during a migration.
+deprecations:
+  - Renamed Share Migration 'notify' and 'force_host_copy'
+    parameters to 'complete' and 'skip_optimized_migration',
+    respectively, to better represent the parameters' functionality.
+other:
+  - Added possibility of having files hash verified during migration.
+  - Added possibility of disabling Share Migration.
+  - Added possibility of disabling fallback approach in
+    Share Migration.

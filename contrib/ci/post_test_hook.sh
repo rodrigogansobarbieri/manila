@@ -45,7 +45,8 @@ POSTGRES_ENABLED=$(trueorfalse True POSTGRES_ENABLED)
 
 if [[ "$BACK_END_TYPE" == "multibackend" ]]; then
     iniset $TEMPEST_CONFIG share multi_backend True
-    iniset $TEMPEST_CONFIG share run_migration_tests $(trueorfalse True RUN_MANILA_MIGRATION_TESTS)
+    iniset $TEMPEST_CONFIG share run_fallback_migration_tests $(trueorfalse True RUN_MANILA_FALLBACK_MIGRATION_TESTS)
+    iniset $TEMPEST_CONFIG share run_optimized_migration_tests $(trueorfalse False RUN_MANILA_OPTIMIZED_MIGRATION_TESTS)
 
     # Set share backends names, they are defined within pre_test_hook
     export BACKENDS_NAMES="LONDON,PARIS"

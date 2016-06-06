@@ -49,7 +49,12 @@ share_api_opts = [
                 default=False,
                 help='If set to False, then share creation from snapshot will '
                      'be performed on the same host. '
-                     'If set to True, then scheduling step will be used.')
+                     'If set to True, then scheduling step will be used.'),
+    cfg.BoolOpt('disable_share_migration',
+                default=False,
+                help='Chooses whether share migration feature should be '
+                     'disabled. If True, all requests to Share Migration APIs '
+                     'will be rejected.')
 ]
 
 CONF = cfg.CONF
@@ -570,8 +575,7 @@ class API(base.Base):
                 'snapshot_support',
                 share_type['extra_specs']['snapshot_support']),
             'share_proto': kwargs.get('share_proto', share.get('share_proto')),
-            'share_type_id': kwargs.get('share_type_id',
-                                        share.get('share_type_id')),
+            'share_type_id': share_type['id'],
             'is_public': kwargs.get('is_public', share.get('is_public')),
             'consistency_group_id': kwargs.get(
                 'consistency_group_id', share.get('consistency_group_id')),
@@ -874,9 +878,17 @@ class API(base.Base):
 
         return snapshot
 
-    def migration_start(self, context, share, dest_host, force_host_copy,
-                        notify=True):
+    def migration_start(self, context, share, dest_host,
+                        skip_optimized_migration, complete=True,
+                        preserve_metadata=True, writable=True,
+                        new_share_network=None):
         """Migrates share to a new host."""
+
+        if CONF.disable_share_migration:
+            msg = _('Migration of share %s cannot be started because Share '
+                    'Migration feature is disabled.') % share['id']
+            LOG.warning(msg)
+            raise exception.Conflict(err=msg)
 
         share_instance = share.instance
 
@@ -912,9 +924,27 @@ class API(base.Base):
             msg = _("Share %s must not have snapshots.") % share['id']
             raise exception.InvalidShare(reason=msg)
 
+        dest_host_host = share_utils.extract_host(dest_host)
+
         # Make sure the host is in the list of available hosts
-        utils.validate_service_host(
-            context, share_utils.extract_host(dest_host))
+        utils.validate_service_host(context, dest_host_host)
+
+        service = self.db.service_get_by_args(
+            context, dest_host_host, 'manila-share')
+
+        share_type = {}
+        share_type_id = share['share_type_id']
+        if share_type_id:
+            share_type = share_types.get_share_type(context, share_type_id)
+
+        new_share_network_id = (new_share_network['id'] if new_share_network
+                                else share_instance['share_network_id'])
+
+        request_spec = self._get_request_spec_dict(
+            share,
+            share_type,
+            availability_zone_id=service['availability_zone_id'],
+            share_network_id=new_share_network_id)
 
         # NOTE(ganso): there is the possibility of an error between here and
         # manager code, which will cause the share to be stuck in
@@ -926,23 +956,10 @@ class API(base.Base):
             context, share,
             {'task_state': constants.TASK_STATE_MIGRATION_STARTING})
 
-        share_type = {}
-        share_type_id = share['share_type_id']
-        if share_type_id:
-            share_type = share_types.get_share_type(context, share_type_id)
-
-        request_spec = self._get_request_spec_dict(share, share_type)
-
-        try:
-            self.scheduler_rpcapi.migrate_share_to_host(
-                context, share['id'], dest_host, force_host_copy, notify,
-                request_spec)
-        except Exception:
-            msg = _('Destination host %(dest_host)s did not pass validation '
-                    'for migration of share %(share)s.') % {
-                'dest_host': dest_host,
-                'share': share['id']}
-            raise exception.InvalidHost(reason=msg)
+        self.scheduler_rpcapi.migrate_share_to_host(
+            context, share['id'], dest_host, skip_optimized_migration,
+            complete, preserve_metadata, writable, new_share_network_id,
+            request_spec)
 
     def migration_complete(self, context, share):
 
