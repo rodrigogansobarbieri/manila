@@ -151,3 +151,6 @@ ls: CommandFilter, ls, root
 
 # manila/data/utils.py: 'touch', '--reference=%s', '%s'
 touch: CommandFilter, touch, root
+
+# manila/data/utils.py: 'sha256sum', '%s'
+sha256sum: CommandFilter, sha256sum, root

@@ -379,8 +379,8 @@ class ShareAPITest(test.TestCase):
                           getattr(self.controller, method),
                           req, share['id'], body)
 
-    @ddt.data('2.6', '2.7', '2.14', '2.15')
-    def test_migration_start_invalid_force_host_copy(self, version):
+    @ddt.data('2.6', '2.7', '2.14', '2.15', '2.19')
+    def test_migration_start_invalid_skip_optimized_migration(self, version):
         share = db_utils.create_share()
         req = fakes.HTTPRequest.blank('/shares/%s/action' % share['id'],
                                       use_admin_context=True, version=version)
@@ -398,9 +398,14 @@ class ShareAPITest(test.TestCase):
             body = {'migrate_share': {'host': 'fake_host',
                                       'force_host_copy': 'fake'}}
             method = 'migrate_share'
-        else:
+        elif api_version.APIVersionRequest(version) < (
+                api_version.APIVersionRequest("2.19")):
             body = {'migration_start': {'host': 'fake_host',
                                         'force_host_copy': 'fake'}}
+            method = 'migration_start'
+        else:
+            body = {'migration_start': {'host': 'fake_host',
+                                        'skip_optimized_migration': 'fake'}}
             method = 'migration_start'
 
         self.mock_object(share_api.API, 'migration_start')
@@ -453,21 +458,6 @@ class ShareAPITest(test.TestCase):
         req.api_version_request.experimental = True
 
         update = {'error': 'error'}
-        body = {'reset_task_state': update}
-
-        self.assertRaises(webob.exc.HTTPBadRequest,
-                          self.controller.reset_task_state, req, share['id'],
-                          body)
-
-    def test_reset_task_state_error_empty(self):
-        share = db_utils.create_share()
-        req = fakes.HTTPRequest.blank('/shares/%s/action' % share['id'],
-                                      use_admin_context=True, version='2.15')
-        req.method = 'POST'
-        req.headers['content-type'] = 'application/json'
-        req.api_version_request.experimental = True
-
-        update = {'task_state': None}
         body = {'reset_task_state': update}
 
         self.assertRaises(webob.exc.HTTPBadRequest,

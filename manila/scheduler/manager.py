@@ -144,7 +144,9 @@ class SchedulerManager(manager.Manager):
                                                  driver_options)
 
     def migrate_share_to_host(self, context, share_id, host,
-                              force_host_copy, notify, request_spec,
+                              skip_optimized_migration, complete,
+                              preserve_metadata, writable,
+                              new_share_network_id, request_spec,
                               filter_properties=None):
         """Ensure that the host exists and can accept the share."""
 
@@ -169,7 +171,9 @@ class SchedulerManager(manager.Manager):
             share_ref = db.share_get(context, share_id)
             try:
                 share_rpcapi.ShareAPI().migration_start(
-                    context, share_ref, tgt_host, force_host_copy, notify)
+                    context, share_ref, tgt_host, skip_optimized_migration,
+                    complete, preserve_metadata, writable,
+                    new_share_network_id)
             except Exception as ex:
                 with excutils.save_and_reraise_exception():
                     _migrate_share_set_error(self, context, ex, request_spec)

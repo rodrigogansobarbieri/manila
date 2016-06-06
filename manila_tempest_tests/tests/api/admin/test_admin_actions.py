@@ -30,7 +30,7 @@ class AdminActionsTest(base.BaseSharesAdminTest):
         super(AdminActionsTest, cls).resource_setup()
         cls.states = ["error", "available"]
         cls.task_states = ["migration_starting", "data_copying_in_progress",
-                           "migration_success"]
+                           "migration_success", None]
         cls.bad_status = "error_deleting"
         cls.sh = cls.create_share()
         cls.sh_instance = (

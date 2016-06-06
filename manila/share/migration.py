@@ -84,11 +84,12 @@ class ShareMigrationHelper(object):
             else:
                 time.sleep(tries ** 2)
 
-    def create_instance_and_wait(self, share, share_instance, host):
+    def create_instance_and_wait(self, share, host, new_share_network_id,
+                                 new_az_id):
 
         new_share_instance = self.api.create_instance(
-            self.context, share, share_instance['share_network_id'],
-            host['host'])
+            self.context, share, new_share_network_id, host['host'],
+            new_az_id)
 
         # Wait for new_share_instance to become ready
         starttime = time.time()
@@ -155,7 +156,7 @@ class ShareMigrationHelper(object):
                           "to read-only.", self.share['id'])
 
                 for rule in rules:
-                    rule['access_level'] = 'ro'
+                    rule['access_level'] = constants.ACCESS_LEVEL_RO
 
                 driver.update_access(self.context, share_instance, rules,
                                      add_rules=[], delete_rules=[],

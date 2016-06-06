@@ -27,6 +27,7 @@ import webob
 from webob import exc
 
 from manila.api import common
+from manila.api.openstack import api_version_request as api_version
 from manila.api.openstack import wsgi
 from manila.api.views import shares as share_views
 from manila import db
@@ -99,7 +100,8 @@ class ShareMixin(object):
 
         return webob.Response(status_int=202)
 
-    def _migration_start(self, req, id, body, check_notify=False):
+    def _migration_start(self, req, id, body, check_complete=False,
+                         check_all_parameters=False):
         """Migrate a share to the specified host."""
         context = req.environ['manila.context']
         try:
@@ -114,29 +116,74 @@ class ShareMixin(object):
             host = params['host']
         except KeyError:
             raise exc.HTTPBadRequest(explanation=_("Must specify 'host'."))
-        force_host_copy = params.get('force_host_copy', False)
+        if req.api_version_request >= (
+                api_version.APIVersionRequest("2.19")):
+            skip_optimized_migration = params.get(
+                'skip_optimized_migration', False)
+        else:
+            skip_optimized_migration = params.get('force_host_copy', False)
         try:
-            force_host_copy = strutils.bool_from_string(force_host_copy,
-                                                        strict=True)
+            skip_optimized_migration = strutils.bool_from_string(
+                skip_optimized_migration, strict=True)
         except ValueError:
-            msg = _("Invalid value %s for 'force_host_copy'. "
-                    "Expecting a boolean.") % force_host_copy
+            msg = _("Invalid value %s for 'skip_optimized_migration'. "
+                    "Expecting a boolean.") % skip_optimized_migration
             raise exc.HTTPBadRequest(explanation=msg)
-        if check_notify:
-            notify = params.get('notify', True)
+        if check_complete:
+            if req.api_version_request >= (
+                    api_version.APIVersionRequest("2.19")):
+                complete = params.get('complete', True)
+            else:
+                complete = params.get('notify', True)
             try:
-                notify = strutils.bool_from_string(notify, strict=True)
+                complete = strutils.bool_from_string(complete, strict=True)
             except ValueError:
-                msg = _("Invalid value %s for 'notify'. "
-                        "Expecting a boolean.") % notify
+                msg = _("Invalid value %s for 'complete'. "
+                        "Expecting a boolean.") % complete
                 raise exc.HTTPBadRequest(explanation=msg)
         else:
-            # NOTE(ganso): default notify value is True
-            notify = True
+            # NOTE(ganso): default complete value is True
+            complete = True
+
+        new_share_network = None
+
+        if check_all_parameters:
+            preserve_metadata = params.get('preserve_metadata', True)
+            try:
+                preserve_metadata = strutils.bool_from_string(
+                    preserve_metadata, strict=True)
+            except ValueError:
+                msg = _("Invalid value %s for 'preserve_metadata'. "
+                        "Expecting a boolean.") % preserve_metadata
+                raise exc.HTTPBadRequest(explanation=msg)
+            writable = params.get('writable', True)
+            try:
+                writable = strutils.bool_from_string(writable, strict=True)
+            except ValueError:
+                msg = _("Invalid value %s for 'writable'. "
+                        "Expecting a boolean.") % writable
+                raise exc.HTTPBadRequest(explanation=msg)
+            new_share_network_id = params.get('new_share_network_id', None)
+            if new_share_network_id:
+                try:
+                    new_share_network = db.share_network_get(
+                        context, new_share_network_id)
+                except exception.NotFound:
+                    msg = _("Share network %s not "
+                            "found.") % new_share_network_id
+                    raise exc.HTTPNotFound(explanation=msg)
+        else:
+            # NOTE(ganso): for backwards compatibility, these values default to
+            # False in previous versions of API.
+            writable = False
+            preserve_metadata = False
+            new_share_network = None
 
         try:
-            self.share_api.migration_start(context, share, host,
-                                           force_host_copy, notify)
+            self.share_api.migration_start(
+                context, share, host, skip_optimized_migration, complete,
+                preserve_metadata, writable,
+                new_share_network=new_share_network)
         except exception.Conflict as e:
             raise exc.HTTPConflict(explanation=six.text_type(e))
 

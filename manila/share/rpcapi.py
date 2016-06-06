@@ -43,8 +43,8 @@ class ShareAPI(object):
                 create_cgsnapshot, and delete_cgsnapshot methods
         1.6  - Introduce Share migration:
             migrate_share()
-            get_migration_info()
-            get_driver_migration_info()
+            get_connection_info()
+            get_driver_connection_info()
         1.7  - Update target call API in allow/deny access methods
         1.8  - Introduce Share Replication:
             create_share_replica()
@@ -54,8 +54,8 @@ class ShareAPI(object):
         1.9  - Add manage_snapshot() and unmanage_snapshot() methods
         1.10 - Add migration_complete(), migration_cancel() and
             migration_get_progress(), rename migrate_share() to
-            migration_start(), rename get_migration_info() to
-            migration_get_info(), rename get_driver_migration_info() to
+            migration_start(), rename get_connection_info() to
+            migration_get_info(), rename get_driver_connection_info() to
             migration_get_driver_info()
         1.11 - Add create_replicated_snapshot() and
             delete_replicated_snapshot() methods
@@ -121,8 +121,9 @@ class ShareAPI(object):
                           share_instance_id=share_instance['id'],
                           force=force)
 
-    def migration_start(self, context, share, dest_host, force_host_copy,
-                        notify):
+    def migration_start(self, context, share, dest_host,
+                        skip_optimized_migration, complete, preserve_metadata,
+                        writable, new_share_network_id):
         new_host = utils.extract_host(share['instance']['host'])
         call_context = self.client.prepare(server=new_host, version='1.6')
         host_p = {'host': dest_host.host,
@@ -131,8 +132,11 @@ class ShareAPI(object):
                           'migration_start',
                           share_id=share['id'],
                           dest_host=host_p,
-                          force_host_copy=force_host_copy,
-                          notify=notify)
+                          skip_optimized_migration=skip_optimized_migration,
+                          complete=complete,
+                          preserve_metadata=preserve_metadata,
+                          writable=writable,
+                          new_share_network_id=new_share_network_id)
 
     def migration_get_info(self, context, share_instance):
         new_host = utils.extract_host(share_instance['host'])

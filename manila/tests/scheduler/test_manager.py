@@ -228,7 +228,7 @@ class SchedulerManagerTestCase(test.TestCase):
                          mock.Mock(return_value=host))
 
         self.manager.migrate_share_to_host(self.context, share['id'], host,
-                                           False, True, {}, None)
+                                           False, True, True, True, {}, None)
 
     def test_migrate_share_to_host_no_valid_host(self):
 
@@ -241,7 +241,8 @@ class SchedulerManagerTestCase(test.TestCase):
 
         self.assertRaises(
             exception.NoValidHost, self.manager.migrate_share_to_host,
-            self.context, share['id'], host, False, True, {}, None)
+            self.context, share['id'], host, False, True, True, True,
+            'fake_id', {}, None)
 
     def test_manage_share(self):
 
