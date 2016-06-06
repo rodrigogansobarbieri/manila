@@ -125,13 +125,6 @@ class AdminActionsNegativeTest(base.BaseSharesMixedTest):
 
     @test.attr(type=[base.TAG_NEGATIVE, base.TAG_API_WITH_BACKEND])
     @base.skip_if_microversion_lt("2.15")
-    def test_reset_task_state_empty(self):
-        self.assertRaises(
-            lib_exc.BadRequest, self.admin_client.reset_task_state,
-            self.sh['id'], None)
-
-    @test.attr(type=[base.TAG_NEGATIVE, base.TAG_API_WITH_BACKEND])
-    @base.skip_if_microversion_lt("2.15")
     def test_reset_task_state_invalid_state(self):
         self.assertRaises(
             lib_exc.BadRequest, self.admin_client.reset_task_state,

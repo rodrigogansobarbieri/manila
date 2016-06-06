@@ -952,21 +952,38 @@ class SharesV2Client(shares_client.SharesClient):
 
 ###############
 
-    def migrate_share(self, share_id, host, notify,
+    def migrate_share(self, share_id, host, complete,
+                      skip_optimized_migration=False,
+                      new_share_network_id=None, writable=False,
+                      preserve_metadata=False,
                       version=LATEST_MICROVERSION, action_name=None):
+        body_content = {}
         if action_name is None:
             if utils.is_microversion_lt(version, "2.7"):
                 action_name = 'os-migrate_share'
             elif utils.is_microversion_lt(version, "2.15"):
                 action_name = 'migrate_share'
+            elif utils.is_microversion_lt(version, "2.19"):
+                action_name = 'migration_start'
+                body_content = {'notify': complete}
             else:
                 action_name = 'migration_start'
+                body_content = {
+                    'complete': complete,
+                    'skip_optimized_migration': skip_optimized_migration,
+                    'new_share_network_id': new_share_network_id,
+                    'writable': writable,
+                    'preserve_metadata': preserve_metadata,
+                }
+
         post_body = {
             action_name: {
                 'host': host,
-                'notify': notify,
             }
         }
+
+        post_body[action_name].update(body_content)
+
         body = json.dumps(post_body)
         return self.post('shares/%s/action' % share_id, body,
                          headers=EXPERIMENTAL, extra_headers=True,

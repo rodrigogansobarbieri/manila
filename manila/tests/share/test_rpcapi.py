@@ -74,7 +74,7 @@ class ShareRpcAPITestCase(test.TestCase):
             "version": kwargs.pop('version', self.rpcapi.BASE_RPC_API_VERSION)
         }
         expected_msg = copy.deepcopy(kwargs)
-        if 'share' in expected_msg and method != 'get_migration_info':
+        if 'share' in expected_msg and method != 'get_connection_info':
             share = expected_msg['share']
             del expected_msg['share']
             expected_msg['share_id'] = share['id']
@@ -255,11 +255,14 @@ class ShareRpcAPITestCase(test.TestCase):
                              version='1.6',
                              share=self.fake_share,
                              dest_host=fake_dest_host,
-                             force_host_copy=True,
-                             notify=True)
+                             skip_optimized_migration=True,
+                             complete=True,
+                             preserve_metadata=True,
+                             writable=True,
+                             new_share_network_id='fake_id')
 
-    def test_migration_get_info(self):
-        self._test_share_api('migration_get_info',
+    def test_connection_get_info(self):
+        self._test_share_api('connection_get_info',
                              rpc_method='call',
                              version='1.6',
                              share_instance=self.fake_share)

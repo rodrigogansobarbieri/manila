@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import ddt
 from tempest import config
 from tempest import test
 
@@ -22,10 +23,26 @@ from manila_tempest_tests import utils
 CONF = config.CONF
 
 
+@ddt.ddt
 class MigrationNFSTest(base.BaseSharesAdminTest):
-    """Tests Share Migration.
+    """Tests Share Migration for NFS shares.
 
-    Tests migration in multi-backend environment.
+    Tests migration of NFS shares in multi-backend environment.
+
+    This class covers:
+    1) Optimized migration: skip_optimized_migration, writable and
+    preserve-metadata are False.
+    2) Fallback migration: skip_optimized_migration is True, writable and
+    preserve-metadata are False.
+    3) 2-phase migration of both Fallback and Optimized: complete is False.
+
+    No need to test with writable and preserve-metadata is True, values are
+    supplied to the driver which decides what to do. Test should be positive,
+    so not being writable and not preserving metadata is less restrictive for
+    drivers, which would abort if they cannot handle them.
+
+    Drivers that implement optimized migration should enable the configuration
+    flag to be tested.
     """
 
     protocol = "nfs"
@@ -36,46 +53,70 @@ class MigrationNFSTest(base.BaseSharesAdminTest):
         if cls.protocol not in CONF.share.enable_protocols:
             message = "%s tests are disabled" % cls.protocol
             raise cls.skipException(message)
-        if not CONF.share.run_migration_tests:
-            raise cls.skipException("Migration tests disabled. Skipping.")
         if len(CONF.share.backend_names) < 2:
             raise cls.skipException("For running migration tests it is "
                                     "required two names in config. Skipping.")
+        if not (CONF.share.run_fallback_migration_tests or
+                CONF.share_run_optimized_migration_tests):
+            raise cls.skipException("Share migration tests disabled. "
+                                    "Skipping.")
 
     @test.attr(type=[base.TAG_POSITIVE, base.TAG_BACKEND])
     @base.skip_if_microversion_lt("2.5")
-    def test_migration_empty_v2_5(self):
+    @ddt.data(True, False)
+    def test_migration_empty(self, skip_optimized):
+
+        self._check_migration_enabled(skip_optimized)
 
         share, dest_pool = self._setup_migration()
 
-        share = self.migrate_share(share['id'], dest_pool, version='2.5')
+        new_share_network_id = self._create_secondary_share_network(
+            share['share_network_id'])
 
-        self._validate_migration_successful(dest_pool, share, version='2.5')
+        share = self.migrate_share(
+            share['id'], dest_pool, skip_optimized_migration=skip_optimized,
+            new_share_network_id=new_share_network_id)
+
+        self._validate_migration_successful(
+            dest_pool, share, share_network_id=new_share_network_id)
 
     @test.attr(type=[base.TAG_POSITIVE, base.TAG_BACKEND])
     @base.skip_if_microversion_lt("2.15")
-    def test_migration_completion_empty_v2_15(self):
+    @ddt.data(True, False)
+    def test_migration_2phase_empty(self, skip_optimized):
+
+        self._check_migration_enabled(skip_optimized)
 
         share, dest_pool = self._setup_migration()
 
         old_exports = self.shares_v2_client.list_share_export_locations(
-            share['id'], version='2.15')
+            share['id'])
         self.assertNotEmpty(old_exports)
         old_exports = [x['path'] for x in old_exports
                        if x['is_admin_only'] is False]
         self.assertNotEmpty(old_exports)
 
+        status = ('data_copying_completed' if skip_optimized else
+                  'migration_driver_phase1_done')
+
+        old_share_network_id = share['share_network_id']
+        new_share_network_id = self._create_secondary_share_network(
+            old_share_network_id)
+
         share = self.migrate_share(
-            share['id'], dest_pool, version='2.15', notify=False,
-            wait_for_status=('data_copying_completed',
-                             'migration_driver_phase1_done'))
+            share['id'], dest_pool, complete=False,
+            skip_optimized_migration=skip_optimized,
+            wait_for_status=status, new_share_network_id=new_share_network_id)
 
-        self._validate_migration_successful(dest_pool, share, '2.15',
-                                            notify=False)
+        self._validate_migration_successful(
+            dest_pool, share, complete=False,
+            share_network_id=old_share_network_id)
 
-        share = self.migration_complete(share['id'], dest_pool, version='2.15')
+        share = self.migration_complete(share['id'], dest_pool)
 
-        self._validate_migration_successful(dest_pool, share, version='2.15')
+        self._validate_migration_successful(
+            dest_pool, share, complete=True,
+            share_network_id=new_share_network_id)
 
     def _setup_migration(self):
 
@@ -112,26 +153,60 @@ class MigrationNFSTest(base.BaseSharesAdminTest):
 
         return share, dest_pool
 
-    def _validate_migration_successful(self, dest_pool, share, version,
-                                       notify=True):
+    def _validate_migration_successful(self, dest_pool, share,
+                                       version=CONF.share.max_api_microversion,
+                                       complete=True, share_network_id=None):
         if utils.is_microversion_lt(version, '2.9'):
             new_exports = share['export_locations']
             self.assertNotEmpty(new_exports)
         else:
             new_exports = self.shares_v2_client.list_share_export_locations(
-                share['id'], version='2.9')
+                share['id'], version=version)
             self.assertNotEmpty(new_exports)
             new_exports = [x['path'] for x in new_exports if
                            x['is_admin_only'] is False]
             self.assertNotEmpty(new_exports)
 
         # Share migrated
-        if notify:
+        if complete:
             self.assertEqual(dest_pool, share['host'])
             self.assertEqual('migration_success', share['task_state'])
+            self.shares_v2_client.delete_share(share['id'])
+            self.shares_v2_client.wait_for_resource_deletion(
+                share_id=share['id'])
         # Share not migrated yet
         else:
             self.assertNotEqual(dest_pool, share['host'])
             self.assertIn(share['task_state'],
                           ('data_copying_completed',
                            'migration_driver_phase1_done'))
+        if share_network_id:
+            self.assertEqual(share_network_id, share['share_network_id'])
+
+    def _check_migration_enabled(self, skip_optimized):
+
+        if skip_optimized:
+            if not CONF.share.run_fallback_migration_tests:
+                raise self.skipException(
+                    "Fallback migration tests disabled. Skipping.")
+        else:
+            if not CONF.share.run_optimized_migration_tests:
+                raise self.skipException(
+                    "Optimized migration tests disabled. Skipping.")
+
+    def _create_secondary_share_network(self, old_share_network_id):
+        if (utils.is_microversion_ge(
+                CONF.share.max_api_microversion, "2.19") and
+                CONF.share.multitenancy_enabled):
+
+            old_share_network = self.shares_v2_client.get_share_network(
+                old_share_network_id)
+
+            new_share_network = self.create_share_network(
+                cleanup_in_class=True,
+                neutron_net_id=old_share_network['neutron_net_id'],
+                neutron_subnet_id=old_share_network['neutron_subnet_id'])
+
+            return new_share_network['id']
+        else:
+            return None

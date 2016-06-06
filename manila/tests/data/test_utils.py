@@ -193,7 +193,9 @@ class CopyClassTestCase(test.TestCase):
                   "",
                   ("", ""),
                   ("10000", ""),
-                  ""]
+                  "",
+                  ("abcxyz", ""),
+                  ("abcxyz", "")]
 
         def get_output(*args, **kwargs):
             return values.pop(0)
