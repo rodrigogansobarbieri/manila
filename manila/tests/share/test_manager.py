@@ -3643,12 +3643,12 @@ class ShareManagerTestCase(test.TestCase):
         self.share_manager.driver.migration_get_driver_info.\
             assert_called_once_with(self.context, share_instance, share_server)
 
-    @ddt.data({'return_value': (True, 'fake_model_update'), 'notify': True},
-              {'return_value': (False, 'fake_model_update'), 'notify': True},
-              {'return_value': (True, 'fake_model_update'), 'notify': False},
-              {'return_value': (False, 'fake_model_update'), 'notify': False})
+    @ddt.data({'return_value': (True, 'model_update'), 'complete': True},
+              {'return_value': (False, 'model_update'), 'complete': True},
+              {'return_value': (True, 'model_update'), 'complete': False},
+              {'return_value': (False, 'model_update'), 'complete': False})
     @ddt.unpack
-    def test_migration_start(self, return_value, notify):
+    def test_migration_start(self, return_value, complete):
 
         server = 'fake_share_server'
         instance = db_utils.create_share_instance(
@@ -3677,7 +3677,7 @@ class ShareManagerTestCase(test.TestCase):
 
         # run
         self.share_manager.migration_start(
-            self.context, 'fake_id', host, False, notify)
+            self.context, 'fake_id', host, False, complete, False, False)
 
         # asserts
         self.share_manager.db.share_get.assert_called_once_with(
@@ -3700,15 +3700,15 @@ class ShareManagerTestCase(test.TestCase):
         share_instance_update_calls = [
             mock.call(self.context, instance['id'],
                       {'status': constants.STATUS_MIGRATING}),
-            mock.call(self.context, instance['id'], 'fake_model_update')
+            mock.call(self.context, instance['id'], 'model_update')
         ]
 
-        if not notify and return_value[0]:
+        if not complete and return_value[0]:
             share_update_calls.append(mock.call(
                 self.context, share['id'],
                 {'task_state':
                  constants.TASK_STATE_MIGRATION_DRIVER_PHASE1_DONE}))
-        elif notify and return_value[0]:
+        elif complete and return_value[0]:
             share_update_calls.append(mock.call(
                 self.context, share['id'],
                 {'task_state': constants.TASK_STATE_MIGRATION_SUCCESS}))
@@ -3727,8 +3727,8 @@ class ShareManagerTestCase(test.TestCase):
         rpcapi.ShareAPI.migration_get_driver_info.assert_called_once_with(
             self.context, instance)
         self.share_manager.driver.migration_start.assert_called_once_with(
-            self.context, instance, server, host, driver_migration_info,
-            notify)
+            self.context, instance, host, driver_migration_info, complete,
+            False, False, server)
 
     def test_migration_start_exception(self):
 
@@ -3762,7 +3762,8 @@ class ShareManagerTestCase(test.TestCase):
         # run
         self.assertRaises(exception.ShareMigrationFailed,
                           self.share_manager.migration_start,
-                          self.context, 'fake_id', host, False, False)
+                          self.context, 'fake_id', host, False, False,
+                          False, False)
 
         # asserts
         self.share_manager.db.share_get.assert_called_once_with(
@@ -3805,7 +3806,8 @@ class ShareManagerTestCase(test.TestCase):
         rpcapi.ShareAPI.migration_get_driver_info.assert_called_once_with(
             self.context, instance)
         self.share_manager.driver.migration_start.assert_called_once_with(
-            self.context, instance, server, host, driver_migration_info, False)
+            self.context, instance, host, driver_migration_info, False,
+            False, False, server)
 
     @ddt.data(None, Exception('fake'))
     def test__migration_start_generic(self, exc):
@@ -3932,7 +3934,7 @@ class ShareManagerTestCase(test.TestCase):
         self.share_manager.db.share_server_get.assert_called_once_with(
             utils.IsAMatcher(context.RequestContext), 'fake_server_id')
         self.share_manager.driver.migration_complete.assert_called_once_with(
-            self.context, instance, server, 'fake_info')
+            self.context, instance, 'fake_info', server)
         rpcapi.ShareAPI.migration_get_driver_info.assert_called_once_with(
             self.context, instance)
         if isinstance(exc, Exception):
@@ -4131,7 +4133,7 @@ class ShareManagerTestCase(test.TestCase):
             self.context, share.instance)
 
         self.share_manager.driver.migration_cancel.assert_called_once_with(
-            self.context, share.instance, server, 'migration_info')
+            self.context, share.instance, 'migration_info', server)
 
     def test_migration_cancel_invalid(self):
 
@@ -4172,7 +4174,7 @@ class ShareManagerTestCase(test.TestCase):
 
         self.share_manager.driver.migration_get_progress.\
             assert_called_once_with(
-                self.context, share.instance, server, 'migration_info')
+                self.context, share.instance, 'migration_info', server)
 
     def test_migration_get_progress_invalid(self):
 

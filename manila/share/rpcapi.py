@@ -120,7 +120,7 @@ class ShareAPI(object):
                           force=force)
 
     def migration_start(self, context, share, dest_host, force_host_copy,
-                        notify):
+                        complete, preserve_metadata, writable):
         new_host = utils.extract_host(share['instance']['host'])
         call_context = self.client.prepare(server=new_host, version='1.6')
         host_p = {'host': dest_host.host,
@@ -130,7 +130,9 @@ class ShareAPI(object):
                           share_id=share['id'],
                           host=host_p,
                           force_host_copy=force_host_copy,
-                          notify=notify)
+                          complete=complete,
+                          preserve_metadata=preserve_metadata,
+                          writable=writable)
 
     def migration_get_info(self, context, share_instance):
         new_host = utils.extract_host(share_instance['host'])

@@ -467,8 +467,8 @@ class ShareDriverTestCase(test.TestCase):
         share_driver = driver.ShareDriver(False)
 
         self.assertEqual((None, None),
-                         share_driver.migration_start(None, None, None,
-                                                      None, None, None))
+                         share_driver.migration_start(None, None, None, None,
+                                                      None, None, None, None))
 
     def test_migration_complete(self):
 
@@ -505,10 +505,12 @@ class ShareDriverTestCase(test.TestCase):
     @ddt.data(True, False)
     def test_migration_get_info(self, admin):
 
-        expected = {'mount': 'mount -vt fake_proto /fake/fake_id %(path)s',
-                    'unmount': 'umount -v %(path)s'}
+        expected = {'mount': 'mount -vt %(options)s nfs /fake/fake_id'
+                             ' %(path)s',
+                    'unmount': 'umount -v %(path)s',
+                    'access_mapping': {'ip': ['nfs']}}
         fake_share = {'id': 'fake_id',
-                      'share_proto': 'fake_proto',
+                      'share_proto': 'nfs',
                       'export_locations': [{'path': '/fake/fake_id',
                                             'is_admin_only': admin}]}
 
