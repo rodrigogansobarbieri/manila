@@ -116,7 +116,7 @@ class DataManagerTestCase(test.TestCase):
         self.assertFalse(self.manager.busy_tasks_shares.get(self.share['id']))
 
         self.manager._copy_share_data.assert_called_once_with(
-            self.context, 'fake_copy', self.share, 'ins1_id', 'ins2_id',
+            self.context, 'fake_copy', self.share, None, 'ins1_id', 'ins2_id',
             'info_src', 'info_dest')
 
         if complete or exc:
@@ -170,7 +170,7 @@ class DataManagerTestCase(test.TestCase):
             self.assertRaises(
                 exception.ShareDataCopyCancelled,
                 self.manager._copy_share_data, self.context, fake_copy,
-                self.share, 'ins1_id', 'ins2_id', migration_info_src,
+                self.share, None, 'ins1_id', 'ins2_id', migration_info_src,
                 migration_info_dest)
             extra_updates = [
                 mock.call(
@@ -186,12 +186,12 @@ class DataManagerTestCase(test.TestCase):
         elif exc:
             self.assertRaises(
                 exception.ShareDataCopyFailed, self.manager._copy_share_data,
-                self.context, fake_copy, self.share, 'ins1_id',
+                self.context, fake_copy, self.share, None, 'ins1_id',
                 'ins2_id', migration_info_src, migration_info_dest)
 
         else:
             self.manager._copy_share_data(
-                self.context, fake_copy, self.share, 'ins1_id',
+                self.context, fake_copy, self.share, None, 'ins1_id',
                 'ins2_id', migration_info_src, migration_info_dest)
             extra_updates = [
                 mock.call(
@@ -269,7 +269,7 @@ class DataManagerTestCase(test.TestCase):
         # run
         self.assertRaises(exception.ShareDataCopyFailed,
                           self.manager._copy_share_data, self.context,
-                          fake_copy, self.share, 'ins1_id', 'ins2_id',
+                          fake_copy, self.share, None, 'ins1_id', 'ins2_id',
                           migration_info_src, migration_info_dest)
 
         # asserts
@@ -312,7 +312,7 @@ class DataManagerTestCase(test.TestCase):
         # run
         self.assertRaises(exception.ShareDataCopyFailed,
                           self.manager._copy_share_data, self.context,
-                          fake_copy, self.share, 'ins1_id', 'ins2_id',
+                          fake_copy, self.share, None, 'ins1_id', 'ins2_id',
                           migration_info_src, migration_info_dest)
 
         # asserts
@@ -366,7 +366,7 @@ class DataManagerTestCase(test.TestCase):
         # run
         self.assertRaises(exception.ShareDataCopyFailed,
                           self.manager._copy_share_data, self.context,
-                          fake_copy, self.share, 'ins1_id', 'ins2_id',
+                          fake_copy, self.share, None, 'ins1_id', 'ins2_id',
                           migration_info_src, migration_info_dest)
 
         # asserts
