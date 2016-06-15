@@ -26,7 +26,7 @@ LOG = log.getLogger(__name__)
 
 class Copy(object):
 
-    def __init__(self, src, dest, ignore_list):
+    def __init__(self, src, dest, ignore_list, overwrite_policy='overwrite'):
         self.src = src
         self.dest = dest
         self.total_size = 0
@@ -36,6 +36,7 @@ class Copy(object):
         self.current_copy = None
         self.ignore_list = ignore_list
         self.cancelled = False
+        self.overwrite_policy = overwrite_policy
 
     def get_progress(self):
 
@@ -129,16 +130,27 @@ class Copy(object):
                 self.current_copy = {'file_path': dest_item,
                                      'size': int(size)}
 
-                utils.execute("cp", "-P", "--preserve=all", src_item,
-                              dest_item, run_as_root=True)
+                if self.overwrite_policy == 'no_overwrite':
+                    overwrite_param = 'n'
+                else:
+                    overwrite_param = ''
+                    if 'force' in self.overwrite_policy:
+                        overwrite_param += 'f'
+                    if 'update' in self.overwrite_policy:
+                        overwrite_param += 'u'
+
+                old_mod_time = None
+                if os.path.exists(dest_item):
+                    old_mod_time, err = utils.execute(
+                        "stat", "-c", "%Y", dest_item, run_as_root=True)
 
                 try:
-                    _validate_item(src_item, dest_item)
+                    _copy_item(src_item, dest_item, old_mod_time,
+                               overwrite_param)
                 except exception.ShareDataCopyFailed:
                     # NOTE(ganso): try again at most one more time.
-                    utils.execute("cp", "-P", "--preserve=all", src_item,
-                                  dest_item, run_as_root=True)
-                    _validate_item(src_item, dest_item)
+                    _copy_item(src_item, dest_item, old_mod_time,
+                               overwrite_param)
 
                 self.current_size += int(size)
                 LOG.info(six.text_type(self.get_progress()))
@@ -169,6 +181,16 @@ class Copy(object):
                               run_as_root=True)
 
 
+def delete_items(path):
+    out, err = utils.execute(
+        "ls", "-pA1", "--group-directories-first", path, run_as_root=True)
+    for line in out.split('\n'):
+        if len(line) == 0:
+            continue
+        item = os.path.join(path, line)
+        utils.execute('rm', '-rf', item, run_as_root=True)
+
+
 def _validate_item(src_item, dest_item):
     src_sum, err = utils.execute(
         "sha256sum", "%s" % src_item, run_as_root=True)
@@ -177,3 +199,17 @@ def _validate_item(src_item, dest_item):
     if src_sum.split()[0] != dest_sum.split()[0]:
         msg = _("Data corrupted while copying. Aborting data copy.")
         raise exception.ShareDataCopyFailed(reason=msg)
+
+
+def _copy_item(src_item, dest_item, old_mod_time, overwrite_param):
+    utils.execute("cp", "-P%s" % overwrite_param,
+                  "--preserve=all", src_item,
+                  dest_item, run_as_root=True)
+
+    new_mod_time = None
+    if old_mod_time:
+        new_mod_time, err = utils.execute("stat", "-c", "%Y", dest_item,
+                                          run_as_root=True)
+
+    if (old_mod_time is None) or (int(new_mod_time) > int(old_mod_time)):
+        _validate_item(src_item, dest_item)

@@ -154,3 +154,9 @@ touch: CommandFilter, touch, root
 
 # manila/data/utils.py: 'sha256sum', '%s'
 sha256sum: CommandFilter, sha256sum, root
+
+# manila/data/manager.py: 'du', '-bslLB1', %s
+du: CommandFilter, du, root
+
+# manila/data/manager.py: 'df', '-B1', %s
+df: CommandFilter, df, root

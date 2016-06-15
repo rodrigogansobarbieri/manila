@@ -31,6 +31,7 @@ from oslo_utils import excutils
 from oslo_utils import importutils
 from oslo_utils import strutils
 from oslo_utils import timeutils
+from oslo_utils import uuidutils
 import six
 
 from manila.common import constants
@@ -177,7 +178,7 @@ def add_hooks(f):
 class ShareManager(manager.SchedulerDependentManager):
     """Manages NAS storages."""
 
-    RPC_API_VERSION = '1.11'
+    RPC_API_VERSION = '1.12'
 
     def __init__(self, share_driver=None, service_name=None, *args, **kwargs):
         """Load the driver from args, or from flags."""
@@ -944,6 +945,100 @@ class ShareManager(manager.SchedulerDependentManager):
             msg = _("Driver is not performing migration for"
                     " share %s") % share_id
             raise exception.InvalidShare(reason=msg)
+
+    def data_job_complete(self, context, request):
+        """Perform last steps of a data job."""
+
+        LOG.debug("Received request to complete data job. Request info: %s.",
+                  six.text_type(request))
+
+        if ((request.get('request_task_completed'),
+             request.get('request_entity')) ==
+                ('revert_read_only', 'share_instance')):
+            share_instance = self.db.share_instance_get(
+                context, request['request_entity_id'], with_share_data=True)
+            rules = self.db.share_access_get_all_for_instance(
+                context, share_instance['id'])
+            share_server = self.db.share_server_get(
+                context, share_instance['share_server_id'])
+            self.driver.update_access(
+                context, share_instance, rules, add_rules=[],
+                delete_rules=[], share_server=share_server)
+
+        msg_i = None
+        msg_w = None
+        msg_e = None
+
+        for share_id in request['request_share_id']:
+
+            share = self.db.share_get(context, share_id)
+            if share['task_state'] == (
+                    constants.TASK_STATE_DATA_COPYING_COMPLETED):
+                self.db.share_update(
+                    context, share_id,
+                    {'task_state': constants.TASK_STATE_DATA_JOB_SUCCESS})
+                msg_i = _LI("Data job with request %s completed successfully.")
+
+            elif share['task_state'] == (
+                    constants.TASK_STATE_DATA_COPYING_CANCELLED):
+                self.db.share_update(
+                    context, share_id,
+                    {'task_state': constants.TASK_STATE_DATA_JOB_CANCELLED})
+                msg_w = _LW("Data job with request %s was cancelled.")
+            else:
+                self.db.share_update(
+                    context, share_id,
+                    {'task_state': constants.TASK_STATE_DATA_JOB_FAILED})
+                msg_e = _LE("Data job with request %s failed.")
+
+        if msg_i:
+            LOG.info(msg_i % request['request_id'])
+        elif msg_w:
+            LOG.warning(msg_w % request['request_id'])
+        else:
+            LOG.error(msg_e % request['request_id'])
+
+    def data_copy_from_share(self, context, share_id, dest_share_id,
+                             src_path, dest_path, read_only, check_space,
+                             overwrite_policy):
+
+        share = self.db.share_get(context, share_id)
+        dest_share = self.db.share_get(context, dest_share_id)
+        share_rpc = share_rpcapi.ShareAPI()
+
+        migration_info_src = share_rpc.migration_get_info(
+            context, share.instance)
+        migration_info_dest = share_rpc.migration_get_info(
+            context, dest_share.instance)
+        request = {
+            'request_type': 'api',
+            'request_id': uuidutils.generate_uuid(),
+            'request_share_id': [share_id, dest_share_id]
+        }
+
+        if read_only:
+            request['request_task_completed'] = 'revert_read_only'
+            request['request_entity'] = 'share_instance'
+            request['request_entity_id'] = share.instance['id']
+
+            rules = self.db.share_access_get_all_for_instance(
+                context, share.instance['id'])
+            for rule in rules:
+                rule['access_level'] = constants.ACCESS_LEVEL_RO
+            share_server = self.db.share_server_get(
+                context, share.instance['share_server_id'])
+            share_instance = self.db.share_instance_get(
+                context, share.instance['id'], with_share_data=True)
+            self.driver.update_access(
+                context, share_instance, rules, add_rules=[],
+                delete_rules=[], share_server=share_server)
+
+        data_rpc = data_rpcapi.DataAPI()
+        data_rpc.copy_share_data(
+            context, share['id'], dest_share['id'], src_path, dest_path,
+            share.instance['id'], dest_share.instance['id'],
+            migration_info_src, migration_info_dest, check_space,
+            overwrite_policy, request)
 
     def _get_share_instance(self, context, share):
         if isinstance(share, six.string_types):

@@ -16,6 +16,11 @@
 """The shares api."""
 
 import ast
+import macpath
+import ntpath
+import os
+import os2emxpath
+import posixpath
 import re
 import string
 
@@ -30,6 +35,7 @@ from manila.api import common
 from manila.api.openstack import api_version_request as api_version
 from manila.api.openstack import wsgi
 from manila.api.views import shares as share_views
+from manila.common import constants
 from manila import db
 from manila import exception
 from manila.i18n import _
@@ -200,7 +206,117 @@ class ShareMixin(object):
             msg = _("Share %s not found.") % id
             raise exc.HTTPNotFound(explanation=msg)
         result = self.share_api.migration_get_progress(context, share)
-        return self._view_builder.migration_get_progress(result)
+        return self._view_builder.data_copy_get_progress(result)
+
+    def _data_copy_from_share(self, req, id, body):
+        """Perform data copy from a given share to another share."""
+        context = req.environ['manila.context']
+        try:
+            share = self.share_api.get(context, id)
+        except exception.NotFound:
+            msg = _("Share %s not found.") % id
+            raise exc.HTTPNotFound(explanation=msg)
+        params = body.get('data_copy_from_share', {})
+        dest_share_id = params.get('destination_share_id')
+        if dest_share_id is None:
+            msg = _("Invalid destination share id value.")
+            raise exc.HTTPBadRequest(explanation=msg)
+        try:
+            dest_share = self.share_api.get(context, dest_share_id)
+        except exception.NotFound:
+            msg = _("Share %s not found.") % id
+            raise exc.HTTPNotFound(explanation=msg)
+        src_path = params.get('source_path', '/')
+        if self._validate_path(src_path):
+            msg = _("Must not include an absolute source path, such as "
+                    "'/' for root or '/somefolder/anotherfolder'.")
+            raise exc.HTTPBadRequest(explanation=msg)
+        dest_path = params.get('destination_path', '/')
+        if self._validate_path(dest_path):
+            msg = _("Must not include an absolute destination path, such as "
+                    "'/' for root or '/somefolder/anotherfolder'.")
+            raise exc.HTTPBadRequest(explanation=msg)
+        # NOTE(ganso): normalize to current node format for proper handling
+        src_path = os.path.normpath(src_path)
+        dest_path = os.path.normpath(dest_path)
+        read_only = params.get('read_only', False)
+        try:
+            read_only = strutils.bool_from_string(read_only, strict=True)
+        except ValueError:
+            msg = _("Invalid value %s for 'read_only'. "
+                    "Expecting a boolean.") % read_only
+            raise exc.HTTPBadRequest(explanation=msg)
+        check_space = params.get('check_space', False)
+        try:
+            check_space = strutils.bool_from_string(check_space, strict=True)
+        except ValueError:
+            msg = _("Invalid value %s for 'check_space'. "
+                    "Expecting a boolean.") % check_space
+            raise exc.HTTPBadRequest(explanation=msg)
+        overwrite_policy = params.get('overwrite_policy', 'overwrite')
+        if overwrite_policy not in constants.OVERWRITE_POLICY_VALUES:
+            msg = _("Invalid value %(current)s for 'overwrite_policy'. "
+                    "Expecting one of (%(expected)s).") % {
+                'current': overwrite_policy,
+                'expected': (
+                    "'" + "', '".join(constants.OVERWRITE_POLICY_VALUES) + "'")
+            }
+            raise exc.HTTPBadRequest(explanation=msg)
+        self.share_api.data_copy_from_share(
+            context, share, dest_share, src_path, dest_path, read_only,
+            check_space, overwrite_policy)
+        return webob.Response(status_int=202)
+
+    def _data_erase(self, req, id, body):
+        """Erases data from a given share."""
+        context = req.environ['manila.context']
+        try:
+            share = self.share_api.get(context, id)
+        except exception.NotFound:
+            msg = _("Share %s not found.") % id
+            raise exc.HTTPNotFound(explanation=msg)
+        params = body.get('data_erase', {})
+        path = params.get('path', '/')
+        if self._validate_path(path):
+            raise exc.HTTPBadRequest(
+                explanation=_("Must not include an absolute path, such as '/' "
+                              "for root or '/somefolder/anotherfolder'."))
+        # NOTE(ganso): normalize to current node format for proper handling
+        path = os.path.normpath(path)
+        self.share_api.data_erase(context, share, path)
+        return webob.Response(status_int=202)
+
+    def _validate_path(self, path):
+        absolute = posixpath.isabs(path)
+        if not absolute:
+            absolute = ntpath.isabs(path)
+        if not absolute:
+            absolute = macpath.isabs(path)
+        if not absolute:
+            absolute = os2emxpath.isabs(path)
+        return absolute
+
+    def _data_copy_get_progress(self, req, id, body):
+        """Retrieve data copy progress of a given source share."""
+        context = req.environ['manila.context']
+        try:
+            share = self.share_api.get(context, id)
+        except exception.NotFound:
+            msg = _("Share %s not found.") % id
+            raise exc.HTTPNotFound(explanation=msg)
+        result = self.share_api.data_copy_get_progress(context, share)
+        return self._view_builder.data_copy_get_progress(result)
+
+    def _data_copy_cancel(self, req, id, body):
+        """Attempts to cancel data copy of a given source share."""
+        context = req.environ['manila.context']
+        try:
+            share = self.share_api.get(context, id)
+        except exception.NotFound:
+            msg = _("Share %s not found.") % id
+            raise exc.HTTPNotFound(explanation=msg)
+        self.share_api.data_copy_cancel(context, share)
+        return webob.Response(status_int=202)
 
     def index(self, req):
         """Returns a summary list of shares."""

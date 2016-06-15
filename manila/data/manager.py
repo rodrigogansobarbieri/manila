@@ -158,7 +158,8 @@ class DataManager(manager.Manager):
     def copy_share_data(self, context, src_share_id, dest_share_id,
                         src_path, dest_path, src_share_instance_id,
                         dest_share_instance_id, migration_info_src,
-                        migration_info_dest, force_copy):
+                        migration_info_dest, check_space, overwrite_policy,
+                        request):
         LOG.info(_LI(
             "Received request to copy share data from share instance "
             "%(src_instance_id)s to instance %(dest_instance_id)s."),
@@ -168,6 +169,7 @@ class DataManager(manager.Manager):
         src_share_ref = self.db.share_get(context, src_share_id)
         dest_share_ref = self.db.share_get(context, dest_share_id)
 
+        share_rpcapi = share_rpc.ShareAPI()
         mount_path = CONF.mount_tmp_location
 
         copy_path_src = os.path.join(mount_path, src_share_instance_id,
@@ -175,15 +177,20 @@ class DataManager(manager.Manager):
         copy_path_dest = os.path.join(mount_path, dest_share_instance_id,
                                       dest_path)
 
+        LOG.debug("Copy path source is: %s", copy_path_src)
+        LOG.debug("Copy path destination is: %s", copy_path_dest)
+
         try:
-            copy = data_utils.Copy(copy_path_src, copy_path_dest, [])
+            copy = data_utils.Copy(copy_path_src, copy_path_dest, [],
+                                   overwrite_policy)
 
             self._copy_share_data(
                 context, copy, src_share_ref, dest_share_ref,
                 src_share_instance_id, dest_share_instance_id,
-                migration_info_src, migration_info_dest, force_copy,
+                migration_info_src, migration_info_dest, check_space,
                 copy_path_src, copy_path_dest)
         except exception.ShareDataCopyCancelled:
+            share_rpcapi.data_job_complete(context, src_share_ref, request)
             return
         except Exception:
             for share in (src_share_ref, dest_share_ref):
@@ -194,6 +201,7 @@ class DataManager(manager.Manager):
                     "instance %(dest)s.") % {'src': src_share_instance_id,
                                              'dest': dest_share_instance_id}
             LOG.exception(msg)
+            share_rpcapi.data_job_complete(context, src_share_ref, request)
             raise exception.ShareDataCopyFailed(reason=msg)
         finally:
             self.busy_tasks_shares.pop(src_share_id, None)
@@ -205,18 +213,28 @@ class DataManager(manager.Manager):
             {'src_instance_id': src_share_instance_id,
              'dest_instance_id': dest_share_instance_id})
 
+        LOG.info(_LI(
+            "Notifying source backend that copying share data from"
+            " share instance %(src_instance_id)s to instance "
+            "%(dest_instance_id)s completed."),
+            {'src_instance_id': src_share_instance_id,
+             'dest_instance_id': dest_share_instance_id})
+
+        share_rpcapi.data_job_complete(context, src_share_ref, request)
+
     def delete_share_data(self, context, share_id, path, share_instance_id,
-                          migration_info):
+                          migration_info, request):
 
         LOG.info(_LI(
             "Received request to delete share data in share instance "
             "%(instance_id)s on path %(path)s."),
             {'instance_id': share_instance_id, 'path': path})
 
+        share_rpcapi = share_rpc.ShareAPI()
         share_ref = self.db.share_get(context, share_id)
 
         try:
-            self._delete_share_data(self, share_ref, share_instance_id,
+            self._delete_share_data(context, share_ref, share_instance_id,
                                     migration_info, path)
         except Exception:
             self.db.share_update(
@@ -226,11 +244,18 @@ class DataManager(manager.Manager):
                     "path %(path)s.") % {'instance': share_instance_id,
                                          'path': path}
             LOG.exception(msg)
+            share_rpcapi.data_job_complete(context, share_ref, request)
             raise exception.ShareDataCopyFailed(reason=msg)
 
         LOG.info(_LI(
             "Completed delete share data operation on share instance %s."),
             share_instance_id)
+
+        LOG.info(_LI(
+            "Notifying backend that erasing share data from"
+            " share instance %s completed."), share_instance_id)
+
+        share_rpcapi.data_job_complete(context, share_ref, request)
 
     def _delete_share_data(self, context, share, share_instance_id,
                            migration_info, path):
@@ -238,14 +263,17 @@ class DataManager(manager.Manager):
         deleted = False
         helper = data_helper.DataServiceHelper(context, self.db, share)
 
-        access_ref = helper.allow_access_to_data_service(
-            share, share_instance_id, None)
+        share_instance = self.db.share_instance_get(
+            context, share_instance_id, with_share_data=True)
+
+        access_ref_list = helper.allow_access_to_data_service(
+            share_instance, migration_info)
 
         mount_path = CONF.mount_tmp_location
 
         try:
             helper.mount_share_instance(
-                migration_info['mount'], mount_path, share_instance_id)
+                migration_info['mount'], mount_path, share_instance)
         except Exception:
             msg = _("Data deletion failed attempting to mount "
                     "share instance %s.") % share_instance_id
@@ -254,7 +282,7 @@ class DataManager(manager.Manager):
 
         try:
             delete_path = os.path.join(mount_path, share_instance_id, path)
-            utils.execute('rm', '-rf', delete_path, run_as_root=True)
+            data_utils.delete_items(delete_path)
             deleted = True
         except Exception:
             LOG.exception(_LE("Failed to delete data from share instance "
@@ -270,7 +298,7 @@ class DataManager(manager.Manager):
                           " %s after its data deletion."), share_instance_id)
 
         try:
-            helper.deny_access_to_data_service(access_ref, share_instance_id)
+            helper.deny_access_to_data_service(access_ref_list, share_instance)
         except Exception:
             LOG.exception(_LE("Could not deny access to instance"
                           " %s after its data deletion."), share_instance_id)
@@ -292,7 +320,7 @@ class DataManager(manager.Manager):
     def _copy_share_data(
             self, context, copy, src_share, dest_share, share_instance_id,
             dest_share_instance_id, migration_info_src, migration_info_dest,
-            force_copy=True, copy_path_src=None, copy_path_dest=None):
+            check_space=False, copy_path_src=None, copy_path_dest=None):
 
         shares = [x for x in (src_share, dest_share) if x is not None]
         copied = False
@@ -376,26 +404,29 @@ class DataManager(manager.Manager):
                             'temp_folder_src', 'access_dest', 'access_src'])
             raise exception.ShareDataCopyFailed(reason=msg)
 
-        for share in shares:
-            self.busy_tasks_shares[share['id']] = copy
-            self.db.share_update(
-                context, share['id'],
-                {'task_state': constants.TASK_STATE_DATA_COPYING_IN_PROGRESS})
-
-        if not force_copy:
-            out, __ = utils.execute('df', '-B1', copy_path_dest,
-                                    run_as_root=True)
-            free = int(out.split('\n')[1].split()[3])
-            out, __ = utils.execute('du', '-bslLB1', copy_path_src,
-                                    run_as_root=True)
-            required = int(out.split()[0])
-            if required > free:
-                msg = _("There is not enough space to perform copying from "
-                        "%(src)s to %(dest)s.") % {'src': copy_path_src,
-                                                   'dest': copy_path_dest}
-                raise exception.ShareDataCopyFailed(reason=msg)
-
         try:
+
+            if check_space:
+                out, __ = utils.execute('df', '-B1', copy_path_dest,
+                                        run_as_root=True)
+                free = int(out.split('\n')[1].split()[3])
+                out, __ = utils.execute('du', '-bslLB1', copy_path_src,
+                                        run_as_root=True)
+                required = int(out.split()[0])
+                if required > free:
+                    msg = _("There is not enough space to perform copying from"
+                            " %(src)s to %(dest)s.") % {'src': copy_path_src,
+                                                        'dest': copy_path_dest}
+                    raise exception.ShareDataCopyFailed(reason=msg)
+
+            for share in shares:
+                self.busy_tasks_shares[share['id']] = copy
+                self.db.share_update(
+                    context, share['id'],
+                    {'task_state': (
+                        constants.TASK_STATE_DATA_COPYING_IN_PROGRESS)
+                     })
+
             copy.run()
 
             for share in shares:

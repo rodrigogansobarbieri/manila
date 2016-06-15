@@ -191,6 +191,26 @@ class ShareController(shares.ShareMixin,
     def unmanage(self, req, id, body=None):
         return self._unmanage(req, id, body)
 
+    @wsgi.Controller.api_version('2.18')
+    @wsgi.action('data_copy_from_share')
+    def data_copy_from_share(self, req, id, body=None):
+        return self._data_copy_from_share(req, id, body)
+
+    @wsgi.Controller.api_version('2.18')
+    @wsgi.action('data_copy_get_progress')
+    def data_copy_get_progress(self, req, id, body=None):
+        return self._data_copy_get_progress(req, id, body)
+
+    @wsgi.Controller.api_version('2.18')
+    @wsgi.action('data_copy_cancel')
+    def data_copy_cancel(self, req, id, body=None):
+        return self._data_copy_cancel(req, id, body)
+
+    @wsgi.Controller.api_version('2.18')
+    @wsgi.action('data_erase')
+    def data_erase(self, req, id, body=None):
+        return self._data_erase(req, id, body)
+
 
 def create_resource():
     return wsgi.Resource(ShareController())

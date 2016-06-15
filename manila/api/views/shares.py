@@ -95,11 +95,11 @@ class ViewBuilder(common.ViewBuilder):
                 'share_server_id')
         return {'share': share_dict}
 
-    def migration_get_progress(self, progress):
+    def data_copy_get_progress(self, progress):
         result = {
-            'total_progress': progress['total_progress'],
-            'current_file_path': progress['current_file_path'],
-            'current_file_progress': progress['current_file_progress']
+            'total_progress': progress.get('total_progress'),
+            'current_file_path': progress.get('current_file_path'),
+            'current_file_progress': progress.get('current_file_progress')
         }
         return result
 

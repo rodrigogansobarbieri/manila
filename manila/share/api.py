@@ -25,6 +25,7 @@ from oslo_log import log
 from oslo_utils import excutils
 from oslo_utils import strutils
 from oslo_utils import timeutils
+from oslo_utils import uuidutils
 import six
 
 from manila.api import extensions
@@ -1013,6 +1014,95 @@ class API(base.Base):
                     " at this moment.") % share['id']
             LOG.error(msg)
             raise exception.InvalidShare(reason=msg)
+
+    def data_copy_get_progress(self, context, share):
+
+        if share['task_state'] == (
+                constants.TASK_STATE_DATA_COPYING_IN_PROGRESS):
+            data_rpc = data_rpcapi.DataAPI()
+            LOG.info(_LI("Sending request to get data copy information"
+                     " of share %s.") % share['id'])
+            return data_rpc.data_copy_get_progress(context, share['id'])
+
+        else:
+            msg = _("Share %s's data copy progress cannot be "
+                    "obtained at this moment.") % share['id']
+            LOG.error(msg)
+            raise exception.InvalidShare(reason=msg)
+
+    def data_copy_cancel(self, context, share):
+
+        if share['task_state'] == (
+                constants.TASK_STATE_DATA_COPYING_IN_PROGRESS):
+
+            data_rpc = data_rpcapi.DataAPI()
+            LOG.info(_LI("Sending request to cancel data copy of "
+                         "share %s.") % share['id'])
+            data_rpc.data_copy_cancel(context, share['id'])
+
+        else:
+            msg = _("Data copy of share %s cannot be cancelled"
+                    " at this moment.") % share['id']
+            LOG.error(msg)
+            raise exception.InvalidShare(reason=msg)
+
+    def data_copy_from_share(self, context, src_share, dest_share,
+                             src_path, dest_path, read_only, check_space,
+                             overwrite_policy):
+
+        if not (src_share['status'] == dest_share['status'] ==
+                constants.STATUS_AVAILABLE):
+            msg = _("Source and Destination shares status must be "
+                    "'%s'.") % constants.STATUS_AVAILABLE
+            raise exception.InvalidShare(reason=msg)
+
+        if src_share.is_busy or dest_share.is_busy:
+            msg = _("Source and Destination shares must not be busy with "
+                    "another task. Source share's task_state: '%(src)s'. "
+                    "Destination share's task_state: '%(dest)s'") % {
+                'src': src_share['task_state'],
+                'dest': dest_share['task_state']
+            }
+            raise exception.InvalidShare(reason=msg)
+
+        for share in (src_share, dest_share):
+            self.db.share_update(
+                context, share['id'],
+                {'task_state': constants.TASK_STATE_DATA_JOB_PREPARING})
+
+        share_rpc = share_rpcapi.ShareAPI()
+        share_rpc.data_copy_from_share(
+            context, src_share, dest_share['id'], src_path, dest_path,
+            read_only, check_space, overwrite_policy)
+
+    def data_erase(self, context, share, path):
+
+        if share['status'] != constants.STATUS_AVAILABLE:
+            msg = _("Shares status must be '%s'.") % constants.STATUS_AVAILABLE
+            raise exception.InvalidShare(reason=msg)
+
+        if share.is_busy:
+            msg = _("Shares must not be busy with another task. "
+                    "Share's task_state: '%s'.") % share['task_state']
+            raise exception.InvalidShare(reason=msg)
+
+        self.db.share_update(
+            context, share['id'],
+            {'task_state': constants.TASK_STATE_DATA_JOB_PREPARING})
+
+        share_rpc = share_rpcapi.ShareAPI()
+        migration_info = share_rpc.migration_get_info(context, share.instance)
+
+        request = {
+            'request_type': 'api',
+            'request_id': uuidutils.generate_uuid(),
+            'request_share_id': [share['id']],
+        }
+
+        data_rpc = data_rpcapi.DataAPI()
+        data_rpc.delete_share_data(
+            context, share['id'], path, share.instance['id'], migration_info,
+            request)
 
     @policy.wrap_check_policy('share')
     def delete_snapshot(self, context, snapshot, force=False):

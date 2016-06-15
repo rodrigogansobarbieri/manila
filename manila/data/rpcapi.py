@@ -72,7 +72,8 @@ class DataAPI(object):
     def copy_share_data(
             self, context, src_share_id, dest_share_id, src_path, dest_path,
             src_share_instance_id, dest_share_instance_id,
-            migration_info_src, migration_info_dest, force_copy):
+            migration_info_src, migration_info_dest, check_space,
+            overwrite_policy, request):
         call_context = self.client.prepare(version='1.1')
         call_context.cast(
             context,
@@ -85,10 +86,13 @@ class DataAPI(object):
             dest_share_instance_id=dest_share_instance_id,
             migration_info_src=migration_info_src,
             migration_info_dest=migration_info_dest,
-            force_copy=force_copy)
+            check_space=check_space,
+            overwrite_policy=overwrite_policy,
+            request=request)
 
     def delete_share_data(
-            self, context, share_id, path, share_instance_id, migration_info):
+            self, context, share_id, path, share_instance_id, migration_info,
+            request):
         call_context = self.client.prepare(version='1.1')
         call_context.cast(
             context,
@@ -96,4 +100,5 @@ class DataAPI(object):
             share_id=share_id,
             path=path,
             share_instance_id=share_instance_id,
-            migration_info=migration_info)
+            migration_info=migration_info,
+            request=request)

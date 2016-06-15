@@ -59,6 +59,7 @@ class ShareAPI(object):
             migration_get_driver_info()
         1.11 - Add create_replicated_snapshot() and
             delete_replicated_snapshot() methods
+        1.12 - Add data_job_complete() method
     """
 
     BASE_RPC_API_VERSION = '1.0'
@@ -67,7 +68,7 @@ class ShareAPI(object):
         super(ShareAPI, self).__init__()
         target = messaging.Target(topic=CONF.share_topic,
                                   version=self.BASE_RPC_API_VERSION)
-        self.client = rpc.get_client(target, version_cap='1.11')
+        self.client = rpc.get_client(target, version_cap='1.12')
 
     def create_share_instance(self, context, share_instance, host,
                               request_spec, filter_properties,
@@ -319,3 +320,27 @@ class ShareAPI(object):
         return call_context.call(context,
                                  'migration_get_progress',
                                  share_id=share['id'])
+
+    def data_job_complete(self, context, share_src, request):
+        new_host = utils.extract_host(share_src['host'])
+        call_context = self.client.prepare(server=new_host, version='1.12')
+        call_context.cast(
+            context,
+            'data_job_complete',
+            request=request)
+
+    def data_copy_from_share(
+            self, context, share, dest_share_id, src_path, dest_path,
+            read_only, check_space, overwrite_policy):
+        new_host = utils.extract_host(share['host'])
+        call_context = self.client.prepare(server=new_host, version='1.12')
+        call_context.cast(
+            context,
+            'data_copy_from_share',
+            share_id=share['id'],
+            dest_share_id=dest_share_id,
+            src_path=src_path,
+            dest_path=dest_path,
+            read_only=read_only,
+            check_space=check_space,
+            overwrite_policy=overwrite_policy)
