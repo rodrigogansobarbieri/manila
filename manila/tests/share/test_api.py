@@ -2388,6 +2388,7 @@ class ShareAPITestCase(test.TestCase):
 
     def test_migration_complete(self):
 
+        dest_host = 'fake_host'
         instance1 = db_utils.create_share_instance(
             share_id='fake_id', status=constants.STATUS_MIGRATING)
         instance2 = db_utils.create_share_instance(
@@ -2399,10 +2400,10 @@ class ShareAPITestCase(test.TestCase):
 
         self.mock_object(share_rpc.ShareAPI, 'migration_complete')
 
-        self.api.migration_complete(self.context, share)
+        self.api.migration_complete(self.context, share, dest_host)
 
         share_rpc.ShareAPI.migration_complete.assert_called_once_with(
-            self.context, share, instance1['id'], instance2['id'])
+            self.context, share, dest_host, instance1['id'], instance2['id'])
 
     def test_migration_complete_task_state_invalid(self):
 
@@ -2411,7 +2412,7 @@ class ShareAPITestCase(test.TestCase):
             task_state=constants.TASK_STATE_DATA_COPYING_IN_PROGRESS)
 
         self.assertRaises(exception.InvalidShare, self.api.migration_complete,
-                          self.context, share)
+                          self.context, share, 'fake_host')
 
     def test_migration_complete_status_invalid(self):
 
@@ -2426,7 +2427,7 @@ class ShareAPITestCase(test.TestCase):
 
         self.assertRaises(exception.ShareMigrationFailed,
                           self.api.migration_complete, self.context,
-                          share)
+                          share, 'fake_host')
 
     def test_migration_cancel(self):
 

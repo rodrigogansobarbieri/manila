@@ -68,13 +68,15 @@ REST_API_VERSION_HISTORY = """
     * 2.16 - Add user_id in share show/create/manage API.
     * 2.17 - Added project_id and user_id fields to the JSON response of
              snapshot show/create/manage API.
+    * 2.18 - Added missing host parameter for 2-phase driver optimized
+             migration in migration_complete.
 """
 
 # The minimum and maximum versions of the API supported
 # The default api version request is defined to be the
 # the minimum version of the API supported.
 _MIN_API_VERSION = "2.0"
-_MAX_API_VERSION = "2.17"
+_MAX_API_VERSION = "2.18"
 DEFAULT_API_VERSION = _MIN_API_VERSION
 
 

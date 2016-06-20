@@ -3718,7 +3718,7 @@ class ShareManagerTestCase(test.TestCase):
         self.share_manager.db.share_instance_update.assert_has_calls(
             share_instance_update_calls)
         rpcapi.ShareAPI.migration_get_driver_info.assert_called_once_with(
-            self.context, instance)
+            self.context, instance['id'], host)
         self.share_manager.driver.migration_start.assert_called_once_with(
             self.context, instance, server, host, driver_migration_info,
             notify)
@@ -3796,7 +3796,7 @@ class ShareManagerTestCase(test.TestCase):
         self.share_manager.db.share_instance_update.assert_has_calls(
             share_instance_update_calls)
         rpcapi.ShareAPI.migration_get_driver_info.assert_called_once_with(
-            self.context, instance)
+            self.context, instance['id'], host)
         self.share_manager.driver.migration_start.assert_called_once_with(
             self.context, instance, server, host, driver_migration_info, False)
 
@@ -3878,6 +3878,7 @@ class ShareManagerTestCase(test.TestCase):
     @ddt.data('fake_model_update', Exception('fake'))
     def test_migration_complete_driver(self, exc):
         server = 'fake_server'
+        host = {'host': 'fake_host'}
         model_update = 'fake_model_update'
         instance = db_utils.create_share_instance(
             share_id='fake_id',
@@ -3901,7 +3902,7 @@ class ShareManagerTestCase(test.TestCase):
                              mock.Mock(side_effect=exc))
         else:
             self.mock_object(self.share_manager.driver, 'migration_complete',
-                             mock.Mock(return_value=exc))
+                             mock.Mock(return_value=model_update))
         self.mock_object(self.share_manager.db, 'share_instance_update')
         self.mock_object(rpcapi.ShareAPI, 'migration_get_driver_info',
                          mock.Mock(return_value='fake_info'))
@@ -3912,10 +3913,12 @@ class ShareManagerTestCase(test.TestCase):
             self.assertRaises(
                 exception.ShareMigrationFailed,
                 self.share_manager.migration_complete,
-                self.context, 'fake_id', 'fake_ins_id', 'new_fake_ins_id')
+                self.context, 'fake_id', host, 'fake_ins_id',
+                'new_fake_ins_id')
         else:
             self.share_manager.migration_complete(
-                self.context, 'fake_id', 'fake_ins_id', 'new_fake_ins_id')
+                self.context, 'fake_id', host, 'fake_ins_id',
+                'new_fake_ins_id')
 
         # asserts
         self.share_manager.db.share_get.assert_called_once_with(
@@ -3925,9 +3928,9 @@ class ShareManagerTestCase(test.TestCase):
         self.share_manager.db.share_server_get.assert_called_once_with(
             utils.IsAMatcher(context.RequestContext), 'fake_server_id')
         self.share_manager.driver.migration_complete.assert_called_once_with(
-            self.context, instance, server, 'fake_info')
+            self.context, instance, host, server, 'fake_info')
         rpcapi.ShareAPI.migration_get_driver_info.assert_called_once_with(
-            self.context, instance)
+            self.context, 'fake_ins_id', host)
         if isinstance(exc, Exception):
             self.share_manager.db.share_update.assert_called_once_with(
                 self.context, share['id'],
@@ -3936,7 +3939,9 @@ class ShareManagerTestCase(test.TestCase):
         else:
             self.share_manager.db.share_update.assert_called_once_with(
                 self.context, share['id'],
-                {'task_state': constants.TASK_STATE_MIGRATION_SUCCESS})
+                {'task_state': constants.TASK_STATE_MIGRATION_SUCCESS,
+                 'host': host['host'],
+                 'status': constants.STATUS_AVAILABLE})
             self.share_manager.db.share_instance_update.\
                 assert_called_once_with(self.context, instance['id'],
                                         model_update)
@@ -3961,10 +3966,12 @@ class ShareManagerTestCase(test.TestCase):
             self.assertRaises(
                 exception.ShareMigrationFailed,
                 self.share_manager.migration_complete,
-                self.context, 'fake_id', 'fake_ins_id', 'new_fake_ins_id')
+                self.context, 'fake_id', 'host', 'fake_ins_id',
+                'new_fake_ins_id')
         else:
             self.share_manager.migration_complete(
-                self.context, 'fake_id', 'fake_ins_id', 'new_fake_ins_id')
+                self.context, 'fake_id', 'host', 'fake_ins_id',
+                'new_fake_ins_id')
 
         # asserts
         self.share_manager.db.share_get.assert_called_once_with(

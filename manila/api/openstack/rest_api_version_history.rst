@@ -114,3 +114,8 @@ user documentation.
 2.17
 ----
   Added user_id and project_id in snapshot show/create/manage APIs.
+
+2.18
+----
+  Fixed missing host parameter for 2-phase driver optimized migration in
+  migration_complete.

@@ -331,7 +331,7 @@ class ShareDriver(object):
         """
         return None, None
 
-    def migration_complete(self, context, share_ref, share_server,
+    def migration_complete(self, context, share_ref, host, share_server,
                            dest_driver_migration_info):
         """Is called to perform 2nd phase of driver migration of a given share.
 
@@ -340,6 +340,7 @@ class ShareDriver(object):
         it.
         :param context: The 'context.RequestContext' object for the request.
         :param share_ref: Reference to the share being migrated.
+        :param host: Destination host and its capabilities.
         :param share_server: Share server model or None.
         :param dest_driver_migration_info: Migration information provided by
         destination host.

@@ -943,7 +943,7 @@ class API(base.Base):
                 'share': share['id']}
             raise exception.InvalidHost(reason=msg)
 
-    def migration_complete(self, context, share):
+    def migration_complete(self, context, share, host):
 
         if share['task_state'] not in (
                 constants.TASK_STATE_DATA_COPYING_COMPLETED,
@@ -975,7 +975,7 @@ class API(base.Base):
                 raise exception.ShareMigrationFailed(reason=msg)
 
         share_rpc = share_rpcapi.ShareAPI()
-        share_rpc.migration_complete(context, share, share_instance_id,
+        share_rpc.migration_complete(context, share, host, share_instance_id,
                                      new_share_instance_id)
 
     def migration_get_progress(self, context, share):

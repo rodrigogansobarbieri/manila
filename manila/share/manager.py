@@ -622,7 +622,7 @@ class ShareManager(manager.SchedulerDependentManager):
 
             try:
                 dest_driver_migration_info = rpcapi.migration_get_driver_info(
-                    context, share_instance)
+                    context, share_instance['id'], host)
 
                 share_server = self._get_share_server(context.elevated(),
                                                       share_instance)
@@ -754,7 +754,7 @@ class ShareManager(manager.SchedulerDependentManager):
             raise exception.ShareMigrationFailed(reason=msg)
 
     @utils.require_driver_initialized
-    def migration_complete(self, context, share_id, share_instance_id,
+    def migration_complete(self, context, share_id, host, share_instance_id,
                            new_share_instance_id):
 
         LOG.info(_LI("Received request to finish Share Migration for "
@@ -773,17 +773,21 @@ class ShareManager(manager.SchedulerDependentManager):
 
             try:
                 dest_driver_migration_info = rpcapi.migration_get_driver_info(
-                    context, share_instance)
+                    context, share_instance_id, host)
 
                 model_update = self.driver.migration_complete(
-                    context, share_instance, share_server,
+                    context, share_instance, host, share_server,
                     dest_driver_migration_info)
                 if model_update:
                     self.db.share_instance_update(
                         context, share_instance['id'], model_update)
+
                 self.db.share_update(
                     context, share_id,
-                    {'task_state': constants.TASK_STATE_MIGRATION_SUCCESS})
+                    {'task_state': constants.TASK_STATE_MIGRATION_SUCCESS,
+                     'host': host['host'],
+                     'status': constants.STATUS_AVAILABLE})
+
             except Exception:
                     msg = _("Driver migration completion failed for"
                             " share %s.") % share_id
