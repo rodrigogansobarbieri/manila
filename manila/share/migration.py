@@ -84,11 +84,11 @@ class ShareMigrationHelper(object):
             else:
                 time.sleep(tries ** 2)
 
-    def create_instance_and_wait(self, share, share_instance, host):
+    def create_instance_and_wait(self, share, share_instance, host, new_az_id):
 
         new_share_instance = self.api.create_instance(
             self.context, share, share_instance['share_network_id'],
-            host['host'])
+            host['host'], new_az_id)
 
         # Wait for new_share_instance to become ready
         starttime = time.time()
@@ -199,3 +199,15 @@ class ShareMigrationHelper(object):
             utils.wait_for_access_update(
                 self.context, self.db, new_share_instance,
                 self.migration_wait_access_rules_timeout)
+
+    @utils.retry(exception.ShareServerNotReady, retries=8)
+    def wait_for_share_server(self, share_server_id):
+        share_server = self.db.share_server_get(self.context, share_server_id)
+        if share_server['status'] == constants.STATUS_ERROR:
+            raise exception.ShareServerNotCreated(
+                share_server_id=share_server_id)
+        elif share_server['status'] == constants.STATUS_ACTIVE:
+            return share_server
+        else:
+            raise exception.ShareServerNotReady(
+                share_server_id=share_server_id)

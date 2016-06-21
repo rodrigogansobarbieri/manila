@@ -263,6 +263,10 @@ class ShareServerNotCreated(ManilaException):
     message = _("Share server %(share_server_id)s failed on creation.")
 
 
+class ShareServerNotReady(ManilaException):
+    message = _("Share server %(share_server_id)s failed to become ready.")
+
+
 class ServiceNotFound(NotFound):
     message = _("Service %(service_id)s could not be found.")
 
