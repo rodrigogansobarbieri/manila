@@ -254,15 +254,17 @@ class DataServiceHelperTestCase(test.TestCase):
             mock.call(fake_path)
         ])
 
-    def test_unmount_share_instance(self):
+    @ddt.data([True, True, False], [True, True, Exception('fake')])
+    def test_unmount_share_instance(self, side_effect):
 
         fake_path = ''.join(('/fake_path/', self.share_instance['id']))
 
         # mocks
         self.mock_object(utils, 'execute')
         self.mock_object(os.path, 'exists', mock.Mock(
-            side_effect=[True, True, False]))
+            side_effect=side_effect))
         self.mock_object(os, 'rmdir')
+        self.mock_object(data_copy_helper.LOG, 'warning')
 
         # run
         self.helper.unmount_share_instance(
@@ -277,3 +279,6 @@ class DataServiceHelperTestCase(test.TestCase):
             mock.call(fake_path),
             mock.call(fake_path)
         ])
+
+        if any(isinstance(x, Exception) for x in side_effect):
+            self.assertTrue(data_copy_helper.LOG.warning.called)

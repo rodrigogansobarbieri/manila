@@ -219,6 +219,33 @@ class ShareMigrationHelperTestCase(test.TestCase):
         self.helper.cleanup_new_instance.assert_called_once_with(
             share_instance_creating)
 
+    @ddt.data(constants.STATUS_ACTIVE, constants.STATUS_ERROR,
+              constants.STATUS_CREATING)
+    def test_wait_for_share_server(self, status):
+
+        server = db_utils.create_share_server(status=status)
+
+        # mocks
+        self.mock_object(db, 'share_server_get',
+                         mock.Mock(return_value=server))
+
+        # run
+        if status == constants.STATUS_ACTIVE:
+            result = self.helper.wait_for_share_server('fake_server_id')
+            self.assertEqual(server, result)
+        elif status == constants.STATUS_ERROR:
+            self.assertRaises(
+                exception.ShareServerNotCreated,
+                self.helper.wait_for_share_server, 'fake_server_id')
+        else:
+            self.mock_object(time, 'sleep')
+            self.assertRaises(
+                exception.ShareServerNotReady,
+                self.helper.wait_for_share_server, 'fake_server_id')
+
+        # asserts
+        db.share_server_get.assert_called_with(self.context, 'fake_server_id')
+
     def test_change_to_read_only_with_ro_support(self):
 
         share_instance = db_utils.create_share_instance(
