@@ -18,6 +18,7 @@ from tempest.lib import exceptions as lib_exc
 from tempest import test
 import testtools
 
+from manila_tempest_tests import share_exceptions
 from manila_tempest_tests.tests.api import base
 
 CONF = config.CONF
@@ -35,18 +36,31 @@ class MigrationNFSTest(base.BaseSharesAdminTest):
     def resource_setup(cls):
         super(MigrationNFSTest, cls).resource_setup()
         if not CONF.share.run_migration_tests:
-            raise cls.skipException("Migration tests disabled. Skipping.")
+            raise cls.skipException("Migration tests disabled.")
 
-        cls.share = cls.create_share(cls.protocol)
-        cls.share = cls.shares_client.get_share(cls.share['id'])
+        if len(CONF.share.backend_names) < 2:
+            raise cls.skipException("For running migration tests it is "
+                                    "required two backend names in config.")
+
         pools = cls.shares_client.list_pools()['pools']
 
         if len(pools) < 2:
             raise cls.skipException("At least two different pool entries "
-                                    "are needed to run migration tests. "
-                                    "Skipping.")
-        cls.dest_pool = next((x for x in pools
-                              if x['name'] != cls.share['host']), None)
+                                    "are needed to run migration tests.")
+
+        cls.share = cls.create_share(cls.protocol)
+        cls.share = cls.shares_client.get_share(cls.share['id'])
+
+        dest_pool = next(
+            (x for x in pools if (x['name'] != cls.share['host'] and any(
+                y.lower() in x['name'] for y in CONF.share.backend_names))),
+            None)
+
+        if not dest_pool or dest_pool.get('name') is None:
+            raise share_exceptions.ShareMigrationException(
+                "No valid pool entries to run migration tests.")
+
+        cls.dest_pool = dest_pool['name']
 
     @test.attr(type=[base.TAG_NEGATIVE, base.TAG_API_WITH_BACKEND])
     @base.skip_if_microversion_lt("2.15")

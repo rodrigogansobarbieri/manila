@@ -199,7 +199,7 @@ class LVMShareDriver(LVMMixin, driver.ShareDriver):
         total_size = re.findall("VSize\s[0-9.]+g", out)[0][6:-1]
         free_size = re.findall("VFree\s[0-9.]+g", out)[0][6:-1]
         return [{
-            'pool_name': 'lvm-single-pool',
+            'pool_name': '-'.join(('lvm-single-pool', self.backend_name)),
             'total_capacity_gb': float(total_size),
             'free_capacity_gb': float(free_size),
             'reserved_percentage': 0,

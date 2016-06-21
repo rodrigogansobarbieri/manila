@@ -20,6 +20,7 @@ from tempest.lib.common.utils import data_utils
 from tempest.lib.common.utils import test_utils
 from tempest.lib import exceptions
 from tempest import test
+import testtools
 
 from manila_tempest_tests.tests.api import base
 from manila_tempest_tests.tests.scenario import manager_share as manager
@@ -244,29 +245,32 @@ class ShareBasicOpsBase(manager.ShareScenarioTest):
 
     @test.services('compute', 'network')
     @test.attr(type=[base.TAG_POSITIVE, base.TAG_BACKEND])
+    @testtools.skipUnless(CONF.share.run_migration_tests,
+                          "Migration tests disabled.")
+    @testtools.skipUnless(len(CONF.share.backend_names) > 1,
+                          "For running migration tests it is "
+                          "required two backend names in config.")
     def test_migration_files(self):
 
         if self.protocol == "CIFS":
             raise self.skipException("Test for CIFS protocol not supported "
-                                     "at this moment. Skipping.")
-
-        if not CONF.share.run_migration_tests:
-            raise self.skipException("Migration tests disabled. Skipping.")
+                                     "at this moment.")
 
         pools = self.shares_admin_client.list_pools()['pools']
 
         if len(pools) < 2:
             raise self.skipException("At least two different pool entries "
-                                     "are needed to run migration tests. "
-                                     "Skipping.")
+                                     "are needed to run migration tests.")
 
         instance = self.boot_instance(wait_until="BUILD")
         self.create_share()
         instance = self.wait_for_active_instance(instance["id"])
         share = self.shares_client.get_share(self.share['id'])
 
-        dest_pool = next((x for x in pools if x['name'] != share['host']),
-                         None)
+        dest_pool = next(
+            (x for x in pools if (x['name'] != share['host'] and any(
+                y.lower() in x['name'] for y in CONF.share.backend_names))),
+            None)
 
         self.assertIsNotNone(dest_pool)
         self.assertIsNotNone(dest_pool.get('name'))

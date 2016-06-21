@@ -475,7 +475,7 @@ class LVMShareDriverTestCase(test.TestCase):
 
     def test_get_share_server_pools(self):
         expected_result = [{
-            'pool_name': 'lvm-single-pool',
+            'pool_name': 'lvm-single-pool-LVM',
             'total_capacity_gb': 33,
             'free_capacity_gb': 22,
             'reserved_percentage': 0,
