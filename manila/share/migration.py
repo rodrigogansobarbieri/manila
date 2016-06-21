@@ -22,6 +22,7 @@ from oslo_log import log
 from manila.common import constants
 from manila import exception
 from manila.i18n import _
+from manila.i18n import _LE
 from manila.i18n import _LW
 from manila.share import api as share_api
 import manila.utils as utils
@@ -199,3 +200,30 @@ class ShareMigrationHelper(object):
             utils.wait_for_access_update(
                 self.context, self.db, new_share_instance,
                 self.migration_wait_access_rules_timeout)
+
+    def wait_for_share_server(self, share_server_id):
+
+        # Wait for share_server to become ready
+        starttime = time.time()
+        deadline = starttime + self.migration_create_delete_share_timeout
+        share_server = self.db.share_server_get(self.context, share_server_id)
+        tries = 0
+        while share_server['status'] != constants.STATUS_ACTIVE:
+            tries += 1
+            now = time.time()
+            if share_server['status'] == constants.STATUS_ERROR:
+                LOG.error(_LE("Share server %s failed to be created.")
+                          % share_server_id)
+                raise exception.ShareServerNotCreated(
+                    share_server_id=share_server_id)
+            elif now > deadline:
+                LOG.error(_LE("Timeout while waiting for share server %s to be"
+                              " created.") % share_server_id)
+                raise exception.ShareServerNotCreated(
+                    share_server_id=share_server_id)
+            else:
+                time.sleep(tries ** 2)
+            share_server = self.db.share_server_get(
+                self.context, share_server_id)
+
+        return share_server

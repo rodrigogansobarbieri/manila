@@ -45,12 +45,9 @@ class MigrationNFSTest(base.BaseSharesAdminTest):
 
         share, dest_pool = self._setup_migration()
 
-        old_exports = share['export_locations']
-
         share = self.migrate_share(share['id'], dest_pool, version='2.5')
 
-        self._validate_migration_successful(dest_pool, share, old_exports,
-                                            version='2.5')
+        self._validate_migration_successful(dest_pool, share, version='2.5')
 
     @test.attr(type=[base.TAG_POSITIVE, base.TAG_BACKEND])
     @base.skip_if_microversion_lt("2.15")
@@ -67,15 +64,15 @@ class MigrationNFSTest(base.BaseSharesAdminTest):
 
         share = self.migrate_share(
             share['id'], dest_pool, version='2.15', notify=False,
-            wait_for_status='data_copying_completed')
+            wait_for_status=('data_copying_completed',
+                             'migration_driver_phase1_done'))
 
-        self._validate_migration_successful(dest_pool, share,
-                                            old_exports, '2.15', notify=False)
+        self._validate_migration_successful(dest_pool, share, '2.15',
+                                            notify=False)
 
         share = self.migration_complete(share['id'], dest_pool, version='2.15')
 
-        self._validate_migration_successful(dest_pool, share, old_exports,
-                                            version='2.15')
+        self._validate_migration_successful(dest_pool, share, version='2.15')
 
     def _setup_migration(self):
 
@@ -111,8 +108,8 @@ class MigrationNFSTest(base.BaseSharesAdminTest):
 
         return share, dest_pool
 
-    def _validate_migration_successful(self, dest_pool, share,
-                                       old_exports, version, notify=True):
+    def _validate_migration_successful(self, dest_pool, share, version,
+                                       notify=True):
         if utils.is_microversion_lt(version, '2.9'):
             new_exports = share['export_locations']
             self.assertNotEmpty(new_exports)
@@ -127,12 +124,10 @@ class MigrationNFSTest(base.BaseSharesAdminTest):
         # Share migrated
         if notify:
             self.assertEqual(dest_pool, share['host'])
-            for export in old_exports:
-                self.assertFalse(export in new_exports)
             self.assertEqual('migration_success', share['task_state'])
         # Share not migrated yet
         else:
             self.assertNotEqual(dest_pool, share['host'])
-            for export in old_exports:
-                self.assertTrue(export in new_exports)
-            self.assertEqual('data_copying_completed', share['task_state'])
+            self.assertIn(share['task_state'],
+                          ('data_copying_completed',
+                           'migration_driver_phase1_done'))

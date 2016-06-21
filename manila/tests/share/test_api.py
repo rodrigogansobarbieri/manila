@@ -2443,16 +2443,21 @@ class ShareAPITestCase(test.TestCase):
 
     def test_migration_cancel_driver(self):
 
+        instance1 = db_utils.create_share_instance(
+            share_id='fake_id', status=constants.STATUS_MIGRATING)
+        instance2 = db_utils.create_share_instance(
+            share_id='fake_id', status=constants.STATUS_MIGRATING_TO)
         share = db_utils.create_share(
             id='fake_id',
-            task_state=constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS)
+            task_state=constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS,
+            instances=[instance1, instance2])
 
         self.mock_object(share_rpc.ShareAPI, 'migration_cancel')
 
         self.api.migration_cancel(self.context, share)
 
         share_rpc.ShareAPI.migration_cancel.assert_called_once_with(
-            self.context, share)
+            self.context, share, instance1['id'], instance2['id'])
 
     def test_migration_cancel_task_state_invalid(self):
 
@@ -2483,9 +2488,14 @@ class ShareAPITestCase(test.TestCase):
 
     def test_migration_get_progress_driver(self):
 
+        instance1 = db_utils.create_share_instance(
+            share_id='fake_id', status=constants.STATUS_MIGRATING)
+        instance2 = db_utils.create_share_instance(
+            share_id='fake_id', status=constants.STATUS_MIGRATING_TO)
         share = db_utils.create_share(
             id='fake_id',
-            task_state=constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS)
+            task_state=constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS,
+            instances=[instance1, instance2])
 
         expected = 'fake_progress'
 
@@ -2497,7 +2507,7 @@ class ShareAPITestCase(test.TestCase):
         self.assertEqual(expected, result)
 
         share_rpc.ShareAPI.migration_get_progress.assert_called_once_with(
-            self.context, share)
+            self.context, share, instance1['id'], instance2['id'])
 
     def test_migration_get_progress_task_state_invalid(self):
 

@@ -101,7 +101,7 @@ class ShareRpcAPITestCase(test.TestCase):
             expected_msg['snapshot_id'] = snapshot['id']
         if 'dest_host' in expected_msg:
             del expected_msg['dest_host']
-            expected_msg['host'] = self.fake_host
+            expected_msg['dest_host'] = self.fake_host
         if 'share_replica' in expected_msg:
             share_replica = expected_msg.pop('share_replica', None)
             expected_msg['share_replica_id'] = share_replica['id']
@@ -123,8 +123,10 @@ class ShareRpcAPITestCase(test.TestCase):
             host = kwargs['share_replica']['host']
         elif 'replicated_snapshot' in kwargs:
             host = kwargs['share']['instance']['host']
-        else:
+        elif 'share' in kwargs:
             host = kwargs['share']['host']
+        else:
+            host = self.fake_host['host']
         target['server'] = host
         target['topic'] = '%s.%s' % (CONF.share_topic, host)
 
@@ -266,7 +268,8 @@ class ShareRpcAPITestCase(test.TestCase):
         self._test_share_api('migration_get_driver_info',
                              rpc_method='call',
                              version='1.6',
-                             share_instance=self.fake_share)
+                             dest_host='fake_host',
+                             share_instance_id=self.fake_share['id'])
 
     def test_migration_complete(self):
         self._test_share_api('migration_complete',
@@ -280,13 +283,17 @@ class ShareRpcAPITestCase(test.TestCase):
         self._test_share_api('migration_cancel',
                              rpc_method='call',
                              version='1.10',
-                             share=self.fake_share)
+                             share=self.fake_share,
+                             share_instance_id='ins1_id',
+                             migrating_instance_id='ins2_id')
 
     def test_migration_get_progress(self):
         self._test_share_api('migration_get_progress',
                              rpc_method='call',
                              version='1.10',
-                             share=self.fake_share)
+                             share=self.fake_share,
+                             share_instance_id='ins1_id',
+                             migrating_instance_id='ins2_id')
 
     def test_delete_share_replica(self):
         self._test_share_api('delete_share_replica',

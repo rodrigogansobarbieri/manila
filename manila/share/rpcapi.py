@@ -59,6 +59,8 @@ class ShareAPI(object):
             migration_get_driver_info()
         1.11 - Add create_replicated_snapshot() and
             delete_replicated_snapshot() methods
+        1.12 - Add provide_remote_share_server() and
+            create_remote_share_server()
     """
 
     BASE_RPC_API_VERSION = '1.0'
@@ -67,7 +69,7 @@ class ShareAPI(object):
         super(ShareAPI, self).__init__()
         target = messaging.Target(topic=CONF.share_topic,
                                   version=self.BASE_RPC_API_VERSION)
-        self.client = rpc.get_client(target, version_cap='1.11')
+        self.client = rpc.get_client(target, version_cap='1.12')
 
     def create_share_instance(self, context, share_instance, host,
                               request_spec, filter_properties,
@@ -128,7 +130,7 @@ class ShareAPI(object):
         call_context.cast(context,
                           'migration_start',
                           share_id=share['id'],
-                          host=host_p,
+                          dest_host=host_p,
                           force_host_copy=force_host_copy,
                           notify=notify)
 
@@ -139,12 +141,12 @@ class ShareAPI(object):
                                  'migration_get_info',
                                  share_instance_id=share_instance['id'])
 
-    def migration_get_driver_info(self, context, share_instance):
-        new_host = utils.extract_host(share_instance['host'])
+    def migration_get_driver_info(self, context, share_instance_id, dest_host):
+        new_host = utils.extract_host(dest_host)
         call_context = self.client.prepare(server=new_host, version='1.6')
         return call_context.call(context,
                                  'migration_get_driver_info',
-                                 share_instance_id=share_instance['id'])
+                                 share_instance_id=share_instance_id)
 
     def delete_share_server(self, context, share_server):
         host = utils.extract_host(share_server['host'])
@@ -306,14 +308,41 @@ class ShareAPI(object):
                           share_instance_id=share_instance_id,
                           new_share_instance_id=new_share_instance_id)
 
-    def migration_cancel(self, context, share):
+    def migration_cancel(self, context, share, share_instance_id,
+                         migrating_instance_id):
         new_host = utils.extract_host(share['host'])
         call_context = self.client.prepare(server=new_host, version='1.10')
-        call_context.call(context, 'migration_cancel', share_id=share['id'])
+        call_context.call(context,
+                          'migration_cancel',
+                          share_id=share['id'],
+                          share_instance_id=share_instance_id,
+                          migrating_instance_id=migrating_instance_id)
 
-    def migration_get_progress(self, context, share):
+    def migration_get_progress(self, context, share, share_instance_id,
+                               migrating_instance_id):
         new_host = utils.extract_host(share['host'])
         call_context = self.client.prepare(server=new_host, version='1.10')
         return call_context.call(context,
                                  'migration_get_progress',
-                                 share_id=share['id'])
+                                 share_id=share['id'],
+                                 share_instance_id=share_instance_id,
+                                 migrating_instance_id=migrating_instance_id)
+
+    def provide_remote_share_server(self, context, share_instance,
+                                    share_network_id, snapshot_id):
+        new_host = utils.extract_host(share_instance['host'])
+        call_context = self.client.prepare(server=new_host, version='1.12')
+        return call_context.call(context,
+                                 'provide_remote_share_server',
+                                 share_instance_id=share_instance['id'],
+                                 share_network_id=share_network_id,
+                                 snapshot_id=snapshot_id)
+
+    def create_remote_share_server(self, context, share_instance,
+                                   share_server_id):
+        new_host = utils.extract_host(share_instance['host'])
+        call_context = self.client.prepare(server=new_host, version='1.12')
+        call_context.cast(context,
+                          'create_remote_share_server',
+                          share_instance_id=share_instance['id'],
+                          share_server_id=share_server_id)

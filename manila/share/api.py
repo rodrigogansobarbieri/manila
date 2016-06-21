@@ -874,7 +874,7 @@ class API(base.Base):
 
         return snapshot
 
-    def migration_start(self, context, share, host, force_host_copy,
+    def migration_start(self, context, share, dest_host, force_host_copy,
                         notify=True):
         """Migrates share to a new host."""
 
@@ -899,10 +899,10 @@ class API(base.Base):
         self._check_is_share_busy(share)
 
         # Make sure the destination host is different than the current one
-        if host == share_instance['host']:
+        if dest_host == share_instance['host']:
             msg = _('Destination host %(dest_host)s must be different '
                     'than the current host %(src_host)s.') % {
-                'dest_host': host,
+                'dest_host': dest_host,
                 'src_host': share_instance['host']}
             raise exception.InvalidHost(reason=msg)
 
@@ -913,7 +913,8 @@ class API(base.Base):
             raise exception.InvalidShare(reason=msg)
 
         # Make sure the host is in the list of available hosts
-        utils.validate_service_host(context, share_utils.extract_host(host))
+        utils.validate_service_host(
+            context, share_utils.extract_host(dest_host))
 
         # NOTE(ganso): there is the possibility of an error between here and
         # manager code, which will cause the share to be stuck in
@@ -933,13 +934,13 @@ class API(base.Base):
         request_spec = self._get_request_spec_dict(share, share_type)
 
         try:
-            self.scheduler_rpcapi.migrate_share_to_host(context, share['id'],
-                                                        host, force_host_copy,
-                                                        notify, request_spec)
+            self.scheduler_rpcapi.migrate_share_to_host(
+                context, share['id'], dest_host, force_host_copy, notify,
+                request_spec)
         except Exception:
             msg = _('Destination host %(dest_host)s did not pass validation '
                     'for migration of share %(share)s.') % {
-                'dest_host': host,
+                'dest_host': dest_host,
                 'share': share['id']}
             raise exception.InvalidHost(reason=msg)
 
@@ -953,38 +954,46 @@ class API(base.Base):
             LOG.error(msg)
             raise exception.InvalidShare(reason=msg)
 
-        share_instance_id = None
-        new_share_instance_id = None
-
-        if share['task_state'] == (
-                constants.TASK_STATE_DATA_COPYING_COMPLETED):
-
-            for instance in share.instances:
-                if instance['status'] == constants.STATUS_MIGRATING:
-                    share_instance_id = instance['id']
-                if instance['status'] == constants.STATUS_MIGRATING_TO:
-                    new_share_instance_id = instance['id']
-
-            if None in (share_instance_id, new_share_instance_id):
-                msg = _("Share instances %(instance_id)s and "
-                        "%(new_instance_id)s in inconsistent states, cannot"
-                        " continue share migration for share %(share_id)s"
-                        ".") % {'instance_id': share_instance_id,
-                                'new_instance_id': new_share_instance_id,
-                                'share_id': share['id']}
-                raise exception.ShareMigrationFailed(reason=msg)
+        share_instance_id, new_share_instance_id = (
+            self._get_migrating_instances(share))
 
         share_rpc = share_rpcapi.ShareAPI()
         share_rpc.migration_complete(context, share, share_instance_id,
                                      new_share_instance_id)
+
+    def _get_migrating_instances(self, share):
+
+        share_instance_id = None
+        new_share_instance_id = None
+
+        for instance in share.instances:
+            if instance['status'] == constants.STATUS_MIGRATING:
+                share_instance_id = instance['id']
+            if instance['status'] == constants.STATUS_MIGRATING_TO:
+                new_share_instance_id = instance['id']
+
+        if None in (share_instance_id, new_share_instance_id):
+            msg = _("Share instances %(instance_id)s and "
+                    "%(new_instance_id)s in inconsistent states, cannot"
+                    " continue share migration for share %(share_id)s"
+                    ".") % {'instance_id': share_instance_id,
+                            'new_instance_id': new_share_instance_id,
+                            'share_id': share['id']}
+            raise exception.ShareMigrationFailed(reason=msg)
+
+        return share_instance_id, new_share_instance_id
 
     def migration_get_progress(self, context, share):
 
         if share['task_state'] == (
                 constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS):
 
+            share_instance_id, migrating_instance_id = (
+                self._get_migrating_instances(share))
+
             share_rpc = share_rpcapi.ShareAPI()
-            return share_rpc.migration_get_progress(context, share)
+            return share_rpc.migration_get_progress(
+                context, share, share_instance_id, migrating_instance_id)
 
         elif share['task_state'] == (
                 constants.TASK_STATE_DATA_COPYING_IN_PROGRESS):
@@ -1004,8 +1013,12 @@ class API(base.Base):
         if share['task_state'] == (
                 constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS):
 
+            share_instance_id, migrating_instance_id = (
+                self._get_migrating_instances(share))
+
             share_rpc = share_rpcapi.ShareAPI()
-            share_rpc.migration_cancel(context, share)
+            share_rpc.migration_cancel(
+                context, share, share_instance_id, migrating_instance_id)
 
         elif share['task_state'] == (
                 constants.TASK_STATE_DATA_COPYING_IN_PROGRESS):
