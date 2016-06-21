@@ -383,10 +383,13 @@ class BaseSharesTest(test.BaseTestCase):
     @classmethod
     def migrate_share(cls, share_id, dest_host, client=None, notify=True,
                       wait_for_status='migration_success', **kwargs):
+        status_list = ([wait_for_status]
+                       if not isinstance(wait_for_status, list)
+                       else wait_for_status)
         client = client or cls.shares_v2_client
         client.migrate_share(share_id, dest_host, notify, **kwargs)
         share = client.wait_for_migration_status(
-            share_id, dest_host, wait_for_status,
+            share_id, dest_host, status_list,
             version=kwargs.get('version'))
         return share
 

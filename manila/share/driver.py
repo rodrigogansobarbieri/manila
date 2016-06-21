@@ -329,10 +329,15 @@ class ShareDriver(object):
         :returns: Dictionary containing a model update with relevant data to
         be updated after migration, such as export locations.
         """
+        # NOTE(ganso): When implementing 2-phase migration (notify=False),
+        # driver may return a model update including the new host (use 'host'
+        # value from 'host' parameter dictionary) for the purpose of
+        # migration_complete be triggered on the destination backend, or save
+        # the destination host info in private storage to be retrieved later by
+        # this backend in migration_complete method.
         return None, None
 
-    def migration_complete(self, context, share_ref, share_server,
-                           dest_driver_migration_info):
+    def migration_complete(self, context, share_ref, share_server):
         """Is called to perform 2nd phase of driver migration of a given share.
 
         If driver is implementing 2-phase migration, this method should
@@ -341,8 +346,6 @@ class ShareDriver(object):
         :param context: The 'context.RequestContext' object for the request.
         :param share_ref: Reference to the share being migrated.
         :param share_server: Share server model or None.
-        :param dest_driver_migration_info: Migration information provided by
-        destination host.
         :returns: Dictionary containing a model update with relevant data to
         be updated after migration, such as export locations.
         """

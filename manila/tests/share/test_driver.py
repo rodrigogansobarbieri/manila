@@ -475,7 +475,7 @@ class ShareDriverTestCase(test.TestCase):
         driver.CONF.set_default('driver_handles_share_servers', False)
         share_driver = driver.ShareDriver(False)
 
-        share_driver.migration_complete(None, None, None, None)
+        share_driver.migration_complete(None, None, None)
 
     def test_migration_cancel(self):
 

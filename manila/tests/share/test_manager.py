@@ -3718,7 +3718,7 @@ class ShareManagerTestCase(test.TestCase):
         self.share_manager.db.share_instance_update.assert_has_calls(
             share_instance_update_calls)
         rpcapi.ShareAPI.migration_get_driver_info.assert_called_once_with(
-            self.context, instance)
+            self.context, instance['id'], host)
         self.share_manager.driver.migration_start.assert_called_once_with(
             self.context, instance, server, host, driver_migration_info,
             notify)
@@ -3796,7 +3796,7 @@ class ShareManagerTestCase(test.TestCase):
         self.share_manager.db.share_instance_update.assert_has_calls(
             share_instance_update_calls)
         rpcapi.ShareAPI.migration_get_driver_info.assert_called_once_with(
-            self.context, instance)
+            self.context, instance['id'], host)
         self.share_manager.driver.migration_start.assert_called_once_with(
             self.context, instance, server, host, driver_migration_info, False)
 
@@ -3901,7 +3901,7 @@ class ShareManagerTestCase(test.TestCase):
                              mock.Mock(side_effect=exc))
         else:
             self.mock_object(self.share_manager.driver, 'migration_complete',
-                             mock.Mock(return_value=exc))
+                             mock.Mock(return_value=model_update))
         self.mock_object(self.share_manager.db, 'share_instance_update')
         self.mock_object(rpcapi.ShareAPI, 'migration_get_driver_info',
                          mock.Mock(return_value='fake_info'))
@@ -3925,9 +3925,7 @@ class ShareManagerTestCase(test.TestCase):
         self.share_manager.db.share_server_get.assert_called_once_with(
             utils.IsAMatcher(context.RequestContext), 'fake_server_id')
         self.share_manager.driver.migration_complete.assert_called_once_with(
-            self.context, instance, server, 'fake_info')
-        rpcapi.ShareAPI.migration_get_driver_info.assert_called_once_with(
-            self.context, instance)
+            self.context, instance, server)
         if isinstance(exc, Exception):
             self.share_manager.db.share_update.assert_called_once_with(
                 self.context, share['id'],
@@ -3936,7 +3934,8 @@ class ShareManagerTestCase(test.TestCase):
         else:
             self.share_manager.db.share_update.assert_called_once_with(
                 self.context, share['id'],
-                {'task_state': constants.TASK_STATE_MIGRATION_SUCCESS})
+                {'task_state': constants.TASK_STATE_MIGRATION_SUCCESS,
+                 'status': constants.STATUS_AVAILABLE})
             self.share_manager.db.share_instance_update.\
                 assert_called_once_with(self.context, instance['id'],
                                         model_update)

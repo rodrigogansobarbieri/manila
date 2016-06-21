@@ -123,8 +123,10 @@ class ShareRpcAPITestCase(test.TestCase):
             host = kwargs['share_replica']['host']
         elif 'replicated_snapshot' in kwargs:
             host = kwargs['share']['instance']['host']
-        else:
+        elif 'share' in kwargs:
             host = kwargs['share']['host']
+        else:
+            host = self.fake_host['host']
         target['server'] = host
         target['topic'] = '%s.%s' % (CONF.share_topic, host)
 
@@ -133,6 +135,8 @@ class ShareRpcAPITestCase(test.TestCase):
 
         def _fake_prepare_method(*args, **kwds):
             for kwd in kwds:
+                print (kwd)
+                print (target[kwd])
                 self.assertEqual(target[kwd], kwds[kwd])
             return self.rpcapi.client
 
@@ -266,7 +270,8 @@ class ShareRpcAPITestCase(test.TestCase):
         self._test_share_api('migration_get_driver_info',
                              rpc_method='call',
                              version='1.6',
-                             share_instance=self.fake_share)
+                             dest_host={'host': 'fake_host'},
+                             share_instance_id=self.fake_share['id'])
 
     def test_migration_complete(self):
         self._test_share_api('migration_complete',

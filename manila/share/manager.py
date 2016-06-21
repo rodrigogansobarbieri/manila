@@ -622,7 +622,7 @@ class ShareManager(manager.SchedulerDependentManager):
 
             try:
                 dest_driver_migration_info = rpcapi.migration_get_driver_info(
-                    context, share_instance)
+                    context, share_instance['id'], host)
 
                 share_server = self._get_share_server(context.elevated(),
                                                       share_instance)
@@ -765,25 +765,22 @@ class ShareManager(manager.SchedulerDependentManager):
         if share_ref['task_state'] == (
                 constants.TASK_STATE_MIGRATION_DRIVER_PHASE1_DONE):
 
-            rpcapi = share_rpcapi.ShareAPI()
-
             share_instance = self._get_share_instance(context, share_ref)
 
             share_server = self._get_share_server(context, share_instance)
 
             try:
-                dest_driver_migration_info = rpcapi.migration_get_driver_info(
-                    context, share_instance)
-
                 model_update = self.driver.migration_complete(
-                    context, share_instance, share_server,
-                    dest_driver_migration_info)
+                    context, share_instance, share_server)
                 if model_update:
                     self.db.share_instance_update(
                         context, share_instance['id'], model_update)
+
                 self.db.share_update(
                     context, share_id,
-                    {'task_state': constants.TASK_STATE_MIGRATION_SUCCESS})
+                    {'task_state': constants.TASK_STATE_MIGRATION_SUCCESS,
+                     'status': constants.STATUS_AVAILABLE})
+
             except Exception:
                     msg = _("Driver migration completion failed for"
                             " share %s.") % share_id

@@ -139,12 +139,12 @@ class ShareAPI(object):
                                  'migration_get_info',
                                  share_instance_id=share_instance['id'])
 
-    def migration_get_driver_info(self, context, share_instance):
-        new_host = utils.extract_host(share_instance['host'])
+    def migration_get_driver_info(self, context, share_instance_id, dest_host):
+        new_host = utils.extract_host(dest_host['host'])
         call_context = self.client.prepare(server=new_host, version='1.6')
         return call_context.call(context,
                                  'migration_get_driver_info',
-                                 share_instance_id=share_instance['id'])
+                                 share_instance_id=share_instance_id)
 
     def delete_share_server(self, context, share_server):
         host = utils.extract_host(share_server['host'])
