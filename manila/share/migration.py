@@ -199,3 +199,15 @@ class ShareMigrationHelper(object):
             utils.wait_for_access_update(
                 self.context, self.db, new_share_instance,
                 self.migration_wait_access_rules_timeout)
+
+    @utils.retry(exception.ShareServerNotReady, retries=8)
+    def wait_for_share_server(self, share_server_id):
+        share_server = self.db.share_server_get(self.context, share_server_id)
+        if share_server['status'] == constants.STATUS_ERROR:
+            raise exception.ShareServerNotCreated(
+                share_server_id=share_server_id)
+        elif share_server['status'] == constants.STATUS_ACTIVE:
+            return share_server
+        else:
+            raise exception.ShareServerNotReady(
+                share_server_id=share_server_id)

@@ -36,6 +36,10 @@ class MigrationNFSTest(base.BaseSharesAdminTest):
         if not CONF.share.run_migration_tests:
             raise cls.skipException("Migration tests disabled. Skipping.")
 
+        if len(CONF.share.backend_names) < 2:
+            raise cls.skipException("For running migration tests it is "
+                                    "required two names in config. Skipping.")
+
         cls.share = cls.create_share(cls.protocol)
         cls.share = cls.shares_client.get_share(cls.share['id'])
         pools = cls.shares_client.list_pools()['pools']
@@ -44,8 +48,15 @@ class MigrationNFSTest(base.BaseSharesAdminTest):
             raise cls.skipException("At least two different pool entries "
                                     "are needed to run migration tests. "
                                     "Skipping.")
-        cls.dest_pool = next((x for x in pools
-                              if x['name'] != cls.share['host']), None)
+        dest_pool = next(
+            (x for x in pools if (x['name'] != cls.share['host'] and any(
+                y in x['name'] for y in CONF.share.backend_names))), None)
+
+        if not dest_pool or dest_pool.get('name') is None:
+            raise cls.skipException("No valid pool entries to run migration "
+                                    "tests. Skipping.")
+
+        cls.dest_pool = dest_pool['name']
 
     @test.attr(type=[base.TAG_NEGATIVE, base.TAG_API_WITH_BACKEND])
     @base.skip_if_microversion_lt("2.15")

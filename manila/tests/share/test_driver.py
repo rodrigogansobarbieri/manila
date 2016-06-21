@@ -467,15 +467,16 @@ class ShareDriverTestCase(test.TestCase):
         share_driver = driver.ShareDriver(False)
 
         self.assertEqual((None, None),
-                         share_driver.migration_start(None, None, None,
-                                                      None, None, None))
+                         share_driver.migration_start(
+                             None, None, None, None, None, None, None, None))
 
     def test_migration_complete(self):
 
         driver.CONF.set_default('driver_handles_share_servers', False)
         share_driver = driver.ShareDriver(False)
 
-        share_driver.migration_complete(None, None, None, None)
+        share_driver.migration_complete(
+            None, None, None, None, None, None, None)
 
     def test_migration_cancel(self):
 
@@ -483,7 +484,7 @@ class ShareDriverTestCase(test.TestCase):
         share_driver = driver.ShareDriver(False)
 
         self.assertRaises(NotImplementedError, share_driver.migration_cancel,
-                          None, None, None, None)
+                          None, None, None, None, None, None, None)
 
     def test_migration_get_progress(self):
 
@@ -492,15 +493,15 @@ class ShareDriverTestCase(test.TestCase):
 
         self.assertRaises(NotImplementedError,
                           share_driver.migration_get_progress,
-                          None, None, None, None)
+                          None, None, None, None, None, None, None)
 
     def test_migration_get_driver_info_default(self):
 
         driver.CONF.set_default('driver_handles_share_servers', False)
         share_driver = driver.ShareDriver(False)
 
-        self.assertIsNone(
-            share_driver.migration_get_driver_info(None, None, None), None)
+        self.assertEqual(
+            {}, share_driver.migration_get_driver_info(None, None, None), None)
 
     @ddt.data(True, False)
     def test_migration_get_info(self, admin):

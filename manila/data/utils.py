@@ -34,8 +34,19 @@ class Copy(object):
         self.current_copy = None
         self.ignore_list = ignore_list
         self.cancelled = False
+        self.initialized = False
+        self.completed = False
 
     def get_progress(self):
+
+        if not self.initialized:
+            return {'total_progress': 0}
+
+        # Empty share or empty contents
+        if self.completed and self.total_size == 0:
+            return {'total_progress': 100}
+
+        # If share is empty, there will be no files
 
         if self.current_copy is not None:
 
@@ -63,7 +74,7 @@ class Copy(object):
 
             return progress
         else:
-            return {'total_progress': 100}
+            return {'total_progress': 0}
 
     def cancel(self):
 
@@ -72,8 +83,10 @@ class Copy(object):
     def run(self):
 
         self.get_total_size(self.src)
+        self.initialized = True
         self.copy_data(self.src)
         self.copy_stats(self.src)
+        self.completed = True
 
         LOG.info(six.text_type(self.get_progress()))
 
