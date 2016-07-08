@@ -183,3 +183,7 @@ user documentation.
 2.30
 ----
   Added cast_rules_to_readonly field to share_instances.
+
+2.31
+----
+  Added mountable snapshots APIs.

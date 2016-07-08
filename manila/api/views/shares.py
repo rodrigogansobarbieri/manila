@@ -33,6 +33,7 @@ class ViewBuilder(common.ViewBuilder):
         "add_create_share_from_snapshot_support_field",
         "add_revert_to_snapshot_support_field",
         "translate_access_rules_status",
+        "add_mount_snapshot_support_field",
     ]
 
     def summary_list(self, request, shares):
@@ -161,6 +162,11 @@ class ViewBuilder(common.ViewBuilder):
         if (share['access_rules_status'] ==
                 constants.SHARE_INSTANCE_RULES_SYNCING):
             share_dict['access_rules_status'] = constants.STATUS_OUT_OF_SYNC
+
+    @common.ViewBuilder.versioned_method("2.31")
+    def add_mount_snapshot_support_field(self, context, share_dict, share):
+        share_dict['mount_snapshot_support'] = share.get(
+            'mount_snapshot_support')
 
     def _list_view(self, func, request, shares):
         """Provide a view for a list of shares."""

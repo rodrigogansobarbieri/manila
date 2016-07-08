@@ -69,6 +69,7 @@ class ShareAPI(object):
         1.14 - Add update_access() and remove allow_access() and deny_access().
         1.15 - Updated migration_start() method with new parameter
             "preserve_snapshots"
+        1.16 - Add snapshot_update_access()
     """
 
     BASE_RPC_API_VERSION = '1.0'
@@ -77,7 +78,7 @@ class ShareAPI(object):
         super(ShareAPI, self).__init__()
         target = messaging.Target(topic=CONF.share_topic,
                                   version=self.BASE_RPC_API_VERSION)
-        self.client = rpc.get_client(target, version_cap='1.15')
+        self.client = rpc.get_client(target, version_cap='1.16')
 
     def create_share_instance(self, context, share_instance, host,
                               request_spec, filter_properties,
@@ -339,3 +340,10 @@ class ShareAPI(object):
         call_context.cast(context,
                           'create_share_server',
                           share_server_id=share_server_id)
+
+    def snapshot_update_access(self, context, snapshot_instance):
+        host = utils.extract_host(snapshot_instance['share_instance']['host'])
+        call_context = self.client.prepare(server=host, version='1.16')
+        call_context.cast(context,
+                          'snapshot_update_access',
+                          snapshot_instance_id=snapshot_instance['id'])

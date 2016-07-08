@@ -185,6 +185,16 @@ def create_access(**kwargs):
     return share_access_rule
 
 
+def create_snapshot_access(**kwargs):
+    """Create a snapshot access rule object."""
+    access = {
+        'access_type': 'fake_type',
+        'access_to': 'fake_IP',
+        'share_snapshot_id': None,
+    }
+    return _create_db_row(db.share_snapshot_access_create, access, kwargs)
+
+
 def create_share_server(**kwargs):
     """Create a share server object."""
     backend_details = kwargs.pop('backend_details', {})
