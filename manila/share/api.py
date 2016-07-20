@@ -956,6 +956,9 @@ class API(base.Base):
             context, share,
             {'task_state': constants.TASK_STATE_MIGRATION_STARTING})
 
+        self.db.share_instance_update(context, share_instance['id'],
+                                      {'status': constants.STATUS_MIGRATING})
+
         self.scheduler_rpcapi.migrate_share_to_host(
             context, share['id'], dest_host, skip_optimized_migration,
             complete, preserve_metadata, writable, new_share_network_id,

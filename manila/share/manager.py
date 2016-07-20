@@ -783,9 +783,6 @@ class ShareManager(manager.SchedulerDependentManager):
         share_instance = self._get_share_instance(context, share_ref)
         moved = False
 
-        self.db.share_instance_update(context, share_instance['id'],
-                                      {'status': constants.STATUS_MIGRATING})
-
         host = share_utils.extract_host(dest_host['host'])
         service = self.db.service_get_by_args(
             context, host, 'manila-share')

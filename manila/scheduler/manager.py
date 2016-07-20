@@ -153,7 +153,8 @@ class SchedulerManager(manager.Manager):
         def _migrate_share_set_error(self, context, ex, request_spec):
             self._set_share_state_and_notify(
                 'migrate_share_to_host',
-                {'task_state': constants.TASK_STATE_MIGRATION_ERROR},
+                {'task_state': constants.TASK_STATE_MIGRATION_ERROR,
+                 'status': constants.STATUS_AVAILABLE},
                 context, ex, request_spec)
 
         try:
