@@ -229,13 +229,14 @@ class SchedulerManagerTestCase(test.TestCase):
 
         self.manager.migrate_share_to_host(
             self.context, share['id'], host, False, True, True, True,
-            'fake_net_id', {}, None)
+            'fake_net_id', 'fake_type_id', {}, None)
 
         db.share_get.assert_called_once_with(self.context, share['id'])
         base.Scheduler.host_passes_filters.assert_called_once_with(
             self.context, host, {}, None)
         share_rpcapi.ShareAPI.migration_start.assert_called_once_with(
-            self.context, share, host, False, True, True, True, 'fake_net_id')
+            self.context, share, host, False, True, True, True, 'fake_net_id',
+            'fake_type_id')
 
     def test_migrate_share_to_host_no_valid_host(self):
 
@@ -253,7 +254,7 @@ class SchedulerManagerTestCase(test.TestCase):
         self.assertRaises(
             exception.NoValidHost, self.manager.migrate_share_to_host,
             self.context, share['id'], host, False, True, True, True,
-            'fake_net_id', request_spec, None)
+            'fake_net_id', 'fake_type_id', request_spec, None)
 
         base.Scheduler.host_passes_filters.assert_called_once_with(
             self.context, host, request_spec, None)

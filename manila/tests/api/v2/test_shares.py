@@ -288,6 +288,7 @@ class ShareAPITest(test.TestCase):
     def test_migration_start(self, version):
         share = db_utils.create_share()
         share_network = db_utils.create_share_network()
+        share_type = {'share_type_id': 'fake_type_id'}
         req = fakes.HTTPRequest.blank('/shares/%s/action' % share['id'],
                                       use_admin_context=True, version=version)
         req.method = 'POST'
@@ -310,9 +311,12 @@ class ShareAPITest(test.TestCase):
         else:
             self.mock_object(db, 'share_network_get', mock.Mock(
                 return_value=share_network))
+            self.mock_object(db, 'share_type_get', mock.Mock(
+                return_value=share_type))
             body = {'migration_start': {
                 'host': 'fake_host',
                 'new_share_network_id': 'fake_net_id',
+                'new_share_type_id': 'fake_type_id',
                 }
             }
             method = 'migration_start'
@@ -328,13 +332,15 @@ class ShareAPITest(test.TestCase):
                 api_version.APIVersionRequest("2.19")):
             share_api.API.migration_start.assert_called_once_with(
                 context, share, 'fake_host', False, True, False, False,
-                new_share_network=None)
+                new_share_network=None, new_share_type=None)
         else:
             share_api.API.migration_start.assert_called_once_with(
                 context, share, 'fake_host', False, True, True, True,
-                new_share_network=share_network)
+                new_share_network=share_network, new_share_type=share_type)
             db.share_network_get.assert_called_once_with(
                 context, 'fake_net_id')
+            db.share_type_get.assert_called_once_with(
+                context, 'fake_type_id')
 
     def test_migration_start_has_replicas(self):
         share = db_utils.create_share()

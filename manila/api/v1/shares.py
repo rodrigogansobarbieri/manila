@@ -146,6 +146,7 @@ class ShareMixin(object):
             complete = True
 
         new_share_network = None
+        new_share_type = None
 
         if check_all_parameters:
             preserve_metadata = params.get('preserve_metadata', True)
@@ -172,18 +173,29 @@ class ShareMixin(object):
                     msg = _("Share network %s not "
                             "found.") % new_share_network_id
                     raise exc.HTTPNotFound(explanation=msg)
+            new_share_type_id = params.get('new_share_type_id', None)
+            if new_share_type_id:
+                try:
+                    new_share_type = db.share_type_get(
+                        context, new_share_type_id)
+                except exception.NotFound:
+                    msg = _("Share type %s not "
+                            "found.") % new_share_type_id
+                    raise exc.HTTPNotFound(explanation=msg)
         else:
             # NOTE(ganso): for backwards compatibility, these values default to
             # False in previous versions of API.
             writable = False
             preserve_metadata = False
             new_share_network = None
+            new_share_type = None
 
         try:
             self.share_api.migration_start(
                 context, share, host, skip_optimized_migration, complete,
                 preserve_metadata, writable,
-                new_share_network=new_share_network)
+                new_share_network=new_share_network,
+                new_share_type=new_share_type)
         except exception.Conflict as e:
             raise exc.HTTPConflict(explanation=six.text_type(e))
 

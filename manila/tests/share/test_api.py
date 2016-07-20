@@ -214,9 +214,10 @@ class ShareAPITestCase(test.TestCase):
             user_id=self.context.user_id,
             project_id=self.context.project_id,
             create_share_instance=False,
-            share_type_id=share_type_id,
         )
-        share_instance = db_utils.create_share_instance(share_id=share['id'])
+        share_instance = db_utils.create_share_instance(
+            share_id=share['id'],
+            share_type_id=share_type_id)
         share_type = {'fake': 'fake'}
         self.mock_object(db_api, 'share_instance_create',
                          mock.Mock(return_value=share_instance))
@@ -253,7 +254,6 @@ class ShareAPITestCase(test.TestCase):
 
         share, share_data = self._setup_create_mocks(
             snapshot_id=snapshot['id'], share_type_id=share_type['id'])
-
         request_spec = {
             'share_properties': share.to_dict(),
             'share_proto': share['share_proto'],
@@ -694,7 +694,8 @@ class ShareAPITestCase(test.TestCase):
         host, share, share_instance = self._setup_create_instance_mocks()
 
         self.api.create_instance(self.context, share, host=host,
-                                 availability_zone='fake')
+                                 availability_zone='fake',
+                                 share_type_id='fake_share_type')
 
         db_api.share_instance_create.assert_called_once_with(
             self.context, share['id'],
@@ -704,10 +705,11 @@ class ShareAPITestCase(test.TestCase):
                 'scheduled_at': self.dt_utc,
                 'host': host,
                 'availability_zone_id': 'fake_id',
+                'share_type_id': 'fake_share_type',
             }
         )
-        db_api.share_type_get.assert_called_once_with(self.context,
-                                                      share['share_type_id'])
+        db_api.share_type_get.assert_called_once_with(
+            self.context, share_instance['share_type_id'])
         self.api.share_rpcapi.create_share_instance.assert_called_once_with(
             self.context,
             share_instance,
@@ -1310,7 +1312,7 @@ class ShareAPITestCase(test.TestCase):
                                 db_api.share_create.call_args[0][1])
         self.api.create_instance.assert_called_once_with(
             self.context, share, share_network_id=share['share_network_id'],
-            host=valid_host,
+            host=valid_host, share_type_id=share_type['id'],
             availability_zone=snapshot['share']['availability_zone'],
             consistency_group=None, cgsnapshot_member=None)
         share_api.policy.check_policy.assert_has_calls([
@@ -2016,7 +2018,8 @@ class ShareAPITestCase(test.TestCase):
             self.context, share, new_size
         )
 
-    def test_migration_start(self):
+    @ddt.data(True, False)
+    def test_migration_start(self, supplied_share_type):
         host = 'fake2@backend#pool'
         service = {'availability_zone_id': 'fake_az_id'}
         share_network = db_utils.create_share_network(id='fake_net_id')
@@ -2028,12 +2031,22 @@ class ShareAPITestCase(test.TestCase):
             },
         }
 
+        if supplied_share_type:
+            fake_type_2 = {
+                'id': 'fake_type_2_id',
+                'extra_specs': {
+                    'snapshot_support': False,
+                },
+            }
+        else:
+            fake_type_2 = fake_type
+
         share = db_utils.create_share(
             status=constants.STATUS_AVAILABLE,
             host='fake@backend#pool', share_type_id=fake_type['id'])
 
         request_spec = self._get_request_spec_dict(
-            share, fake_type, size=0, availability_zone_id='fake_az_id',
+            share, fake_type_2, size=0, availability_zone_id='fake_az_id',
             share_network_id='fake_net_id')
 
         self.mock_object(self.scheduler_rpcapi, 'migrate_share_to_host')
@@ -2045,14 +2058,19 @@ class ShareAPITestCase(test.TestCase):
         self.mock_object(db_api, 'service_get_by_args',
                          mock.Mock(return_value=service))
 
-        self.api.migration_start(self.context, share, host, True, True, True,
-                                 True, share_network)
+        if supplied_share_type:
+            self.api.migration_start(self.context, share, host, True, True,
+                                     True, True, share_network, fake_type_2)
+        else:
+            self.api.migration_start(self.context, share, host, True, True,
+                                     True, True, share_network, None)
 
         self.scheduler_rpcapi.migrate_share_to_host.assert_called_once_with(
             self.context, share['id'], host, True, True, True, True,
-            'fake_net_id', request_spec)
-        share_types.get_share_type.assert_called_once_with(
-            self.context, fake_type['id'])
+            'fake_net_id', fake_type_2['id'], request_spec)
+        if not supplied_share_type:
+            share_types.get_share_type.assert_called_once_with(
+                self.context, fake_type['id'])
         utils.validate_service_host.assert_called_once_with(
             self.context, 'fake2@backend')
         db_api.service_get_by_args.assert_called_once_with(

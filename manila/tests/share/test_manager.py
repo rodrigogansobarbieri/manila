@@ -3665,7 +3665,7 @@ class ShareManagerTestCase(test.TestCase):
         # run
         self.share_manager.migration_start(
             self.context, 'fake_id', host, False, complete, False, False,
-            'fake_net_id')
+            'fake_net_id', 'fake_type_id')
 
         # asserts
         self.share_manager.db.share_get.assert_called_once_with(
@@ -3696,12 +3696,12 @@ class ShareManagerTestCase(test.TestCase):
         self.share_manager.db.share_update.assert_has_calls(share_update_calls)
         self.share_manager._migration_start_driver.assert_called_once_with(
             self.context, share, instance, host, complete, False, False,
-            'fake_net_id', 'fake_az_id')
+            'fake_net_id', 'fake_az_id', 'fake_type_id')
         if not moved:
             (self.share_manager._migration_start_fallback.
-                assert_called_once_with(
-                    self.context, share, instance, host, complete,
-                    'fake_net_id', 'fake_az_id'))
+             assert_called_once_with(
+                 self.context, share, instance, host, complete, 'fake_net_id',
+                 'fake_az_id', 'fake_type_id'))
 
     def test_migration_start_prevent_fallback(self):
 
@@ -3767,7 +3767,7 @@ class ShareManagerTestCase(test.TestCase):
             exception.ShareMigrationFailed,
             self.share_manager.migration_start,
             self.context, 'fake_id', host, False, True, False, False,
-            'fake_net_id')
+            'fake_net_id', 'fake_type_id')
 
         # asserts
         self.share_manager.db.share_get.assert_called_once_with(
@@ -3790,7 +3790,7 @@ class ShareManagerTestCase(test.TestCase):
             {'status': constants.STATUS_AVAILABLE})
         self.share_manager._migration_start_driver.assert_called_once_with(
             self.context, share, instance, host, True, False, False,
-            'fake_net_id', 'fake_az_id')
+            'fake_net_id', 'fake_az_id', 'fake_type_id')
 
     @ddt.data(None, Exception('fake'))
     def test__migration_start_fallback(self, exc):
@@ -3837,7 +3837,7 @@ class ShareManagerTestCase(test.TestCase):
             exception.ShareMigrationFailed,
             self.share_manager._migration_start_fallback,
             self.context, share, instance, 'fake_host', False,
-            'fake_net_id', 'fake_az_id')
+            'fake_net_id', 'fake_az_id', 'fake_type_id')
 
         # asserts
         self.share_manager.db.share_server_get.assert_called_once_with(
@@ -3849,7 +3849,7 @@ class ShareManagerTestCase(test.TestCase):
                                     self.share_manager.driver)
         migration_api.ShareMigrationHelper.create_instance_and_wait.\
             assert_called_once_with(share, 'fake_host', 'fake_net_id',
-                                    'fake_az_id')
+                                    'fake_az_id', 'fake_type_id')
         migration_api.ShareMigrationHelper.\
             cleanup_access_rules.assert_called_once_with(
                 instance, server, self.share_manager.driver)
@@ -3932,11 +3932,11 @@ class ShareManagerTestCase(test.TestCase):
                 exception.ShareMigrationFailed,
                 self.share_manager._migration_start_driver,
                 self.context, share, src_instance, fake_dest_host, True, True,
-                True, share_network_id, 'fake_az_id')
+                True, share_network_id, 'fake_az_id', 'fake_type_id')
         else:
             result = self.share_manager._migration_start_driver(
                 self.context, share, src_instance, fake_dest_host, True, True,
-                True, share_network_id, 'fake_az_id')
+                True, share_network_id, 'fake_az_id', 'fake_type_id')
 
         # asserts
         if not exc:
@@ -3945,7 +3945,8 @@ class ShareManagerTestCase(test.TestCase):
             self.context, 'fake_src_server_id')
         (api.API._create_share_instance_and_get_request_spec.
          assert_called_once_with(self.context, share, 'fake_az_id', None,
-                                 'fake_host', share_network_id))
+                                 'fake_host', share_network_id,
+                                 'fake_type_id'))
         (self.share_manager.db.share_instance_access_copy.
             assert_called_once_with(
                 self.context, share['id'], migrating_instance['id']))
@@ -4019,7 +4020,7 @@ class ShareManagerTestCase(test.TestCase):
         # run
         result = self.share_manager._migration_start_driver(
             self.context, share, src_instance, fake_dest_host, True, True,
-            True, 'fake_net_id', 'fake_az_id')
+            True, 'fake_net_id', 'fake_az_id', 'fake_type_id')
 
         # asserts
         self.assertEqual(False, result)

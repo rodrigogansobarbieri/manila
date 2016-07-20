@@ -668,7 +668,8 @@ class ShareManager(manager.SchedulerDependentManager):
 
     def _migration_start_driver(
             self, context, share_ref, share_instance, dest_host, complete,
-            writable, preserve_metadata, new_share_network_id, new_az_id):
+            writable, preserve_metadata, new_share_network_id, new_az_id,
+            new_share_type_id):
 
         dest_driver_connection_info = self.driver.connection_get_driver_info(
             context, share_instance, dest_host)
@@ -691,7 +692,7 @@ class ShareManager(manager.SchedulerDependentManager):
         request_spec, migrating_instance = (
             share_api._create_share_instance_and_get_request_spec(
                 context, share_ref, new_az_id, None, dest_host['host'],
-                new_share_network_id))
+                new_share_network_id, new_share_type_id))
 
         self.db.share_instance_update(
             context, migrating_instance['id'],
@@ -771,7 +772,7 @@ class ShareManager(manager.SchedulerDependentManager):
     def migration_start(self, context, share_id, dest_host,
                         skip_optimized_migration, complete=True,
                         preserve_metadata=True, writable=True,
-                        new_share_network_id=None):
+                        new_share_network_id=None, new_share_type_id=None):
         """Migrates a share from current host to another host."""
         LOG.debug("Entered migration_start method for share %s.", share_id)
 
@@ -794,7 +795,7 @@ class ShareManager(manager.SchedulerDependentManager):
                 moved = self._migration_start_driver(
                     context, share_ref, share_instance, dest_host, complete,
                     writable, preserve_metadata, new_share_network_id,
-                    new_az_id)
+                    new_az_id, new_share_type_id)
 
             except Exception as e:
                 msg = six.text_type(e)
@@ -824,7 +825,7 @@ class ShareManager(manager.SchedulerDependentManager):
 
                 self._migration_start_fallback(
                     context, share_ref, share_instance, dest_host, complete,
-                    new_share_network_id, new_az_id)
+                    new_share_network_id, new_az_id, new_share_type_id)
             except Exception:
                 msg = _("Generic migration failed for share %s.") % share_id
                 LOG.exception(msg)
@@ -850,7 +851,7 @@ class ShareManager(manager.SchedulerDependentManager):
 
     def _migration_start_fallback(self, context, share, share_instance,
                                   dest_host, complete, new_share_network_id,
-                                  new_az_id):
+                                  new_az_id, new_share_type_id):
 
         rpcapi = share_rpcapi.ShareAPI()
 
@@ -867,7 +868,8 @@ class ShareManager(manager.SchedulerDependentManager):
 
         try:
             new_share_instance = helper.create_instance_and_wait(
-                share, dest_host, new_share_network_id, new_az_id)
+                share, dest_host, new_share_network_id, new_az_id,
+                new_share_type_id)
 
             self.db.share_instance_update(
                 context, new_share_instance['id'],
