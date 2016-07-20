@@ -15,6 +15,7 @@ features:
     configuration option.
   - Administrators can now change share's share network during a
     migration.
+  - Admin can now change share's type during a migration.
   - Added possibility of having files hash verified during migration.
 deprecations:
   - Renamed Share Migration 'force_host_copy' parameter
