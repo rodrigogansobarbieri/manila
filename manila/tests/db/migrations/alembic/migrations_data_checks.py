@@ -762,3 +762,90 @@ class NewGatewayColumnChecks(BaseMigrationChecks):
             self.test_case.assertTrue(db_result.rowcount >= len(ids))
             for record in db_result:
                 self.test_case.assertFalse(hasattr(record, 'gateway'))
+
+
+@map_to_migration('48a7beae3117')
+class MoveShareTypeIdToInstancesCheck(BaseMigrationChecks):
+
+    some_shares = [
+        {
+            'id': 's1',
+            'share_type_id': 'type_id_1',
+        },
+        {
+            'id': 's2',
+            'share_type_id': 'type_id_2',
+        },
+        {
+            'id': 's3',
+            'share_type_id': 'type_id_3',
+        },
+    ]
+
+    some_instances = [
+        {
+            'id': 'i1',
+            'share_id': 's3',
+        },
+        {
+            'id': 'i2',
+            'share_id': 's2',
+        },
+        {
+            'id': 'i3',
+            'share_id': 's1',
+        },
+    ]
+
+    def setup_upgrade_data(self, engine):
+
+        shares_table = utils.load_table('shares', engine)
+        share_instances_table = utils.load_table('share_instances', engine)
+
+        for share in self.some_shares:
+            engine.execute(shares_table.insert(share))
+
+        for instance in self.some_instances:
+            engine.execute(share_instances_table.insert(instance))
+
+    def check_upgrade(self, engine, data):
+
+        shares_table = utils.load_table('shares', engine)
+        share_instances_table = utils.load_table('share_instances', engine)
+
+        for instance in engine.execute(share_instances_table.select()):
+            share = engine.execute(shares_table.select().where(
+                instance['share_id'] == shares_table.c.id)).first()
+            self.test_case.assertEqual(
+                next((x for x in self.some_shares if share['id'] == x['id']),
+                     None)['share_type_id'],
+                instance['share_type_id'])
+
+        for share in engine.execute(shares_table.select()):
+            result = False
+            try:
+                value = share['share_type_id']
+                result = True or value
+            except Exception:
+                pass
+            self.test_case.assertFalse(result)
+
+    def check_downgrade(self, engine):
+
+        shares_table = utils.load_table('shares', engine)
+        share_instances_table = utils.load_table('share_instances', engine)
+
+        for instance in engine.execute(share_instances_table.select()):
+            result = False
+            try:
+                value = instance['share_type_id']
+                result = True or value
+            except Exception:
+                pass
+            self.test_case.assertFalse(result)
+
+        for share in engine.execute(shares_table.select()):
+            self.test_case.assertEqual(
+                next((x for x in self.some_shares if share['id'] == x['id']),
+                     None)['share_type_id'],
+                share['share_type_id'])
