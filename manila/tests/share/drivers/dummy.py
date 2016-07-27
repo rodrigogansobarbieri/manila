@@ -23,6 +23,7 @@ This driver simulates support of:
 - CIFS shares in DHSS=True driver mode
 - Creation and deletion of share snapshots
 - Share replication (readable)
+- Share migration
 - Consistency groups
 - Resize of a share (extend/shrink)
 
@@ -48,6 +49,7 @@ class DummyDriver(driver.ShareDriver):
         self.private_storage = kwargs.get('private_storage')
         self.backend_name = self.configuration.safe_get(
             "share_backend_name") or "DummyDriver"
+        self.migration_progress = {}
 
     def _get_share_name(self, share):
         return "share_%(s_id)s_%(si_id)s" % {
@@ -328,3 +330,79 @@ class DummyDriver(driver.ShareDriver):
         """Update the status of a snapshot instance that lives on a replica."""
         return {
             "id": replica_snapshot["id"], "status": constants.STATUS_AVAILABLE}
+
+    def migration_check_compatibility(
+            self, context, share_ref, dest_host, dest_driver_migration_info,
+            share_server=None):
+        """Is called to test compatibility with destination backend."""
+        return self.configuration.share_driver == (
+            dest_driver_migration_info.get("share_driver"))
+
+    def migration_start(
+            self, context, share_ref, dest_host, dest_driver_migration_info,
+            migrating_share_ref, access_rules, share_server=None,
+            dest_share_server=None):
+        """Is called to perform 1st phase of driver migration of a given share.
+
+        """
+        LOG.debug(
+            "Migration of dummy share with ID '%s' has been started." %
+            share_ref["id"])
+        return True, {}
+
+    def migration_complete(
+            self, context, share_ref, dest_host, dest_driver_migration_info,
+            migrating_share_ref, access_rules, share_server=None,
+            dest_share_server=None):
+        """Is called to perform 2nd phase of driver migration of a given share.
+
+        """
+        return self._do_migration(share_ref, share_server)
+
+    def _do_migration(self, share_ref, share_server):
+        share_name = self._get_share_name(share_ref)
+        mountpoint = "/path/to/fake/share/%s" % share_name
+        self.private_storage.update(
+            share_ref["id"], {
+                "fake_provider_share_name": share_name,
+                "fake_provider_location": mountpoint,
+            }
+        )
+        LOG.debug(
+            "Migration of dummy share with ID '%s' has been completed." %
+            share_ref["id"])
+        self.migration_progress.pop(share_ref["id"], None)
+
+        return self._generate_export_locations(
+            mountpoint, share_server=share_server)
+
+    def migration_cancel(
+            self, context, share_ref, dest_host, dest_driver_migration_info,
+            migrating_share_ref, share_server=None, dest_share_server=None):
+        """Is called to cancel driver migration."""
+        LOG.debug(
+            "Migration of dummy share with ID '%s' has been canceled." %
+            share_ref["id"])
+        self.migration_progress.pop(share_ref["id"], None)
+
+    def migration_get_progress(
+            self, context, share_ref, dest_host, dest_driver_migration_info,
+            migrating_share_ref, share_server=None, dest_share_server=None):
+        """Is called to get migration progress."""
+        # Simulate migration progress.
+        if share_ref["id"] not in self.migration_progress:
+            self.migration_progress[share_ref["id"]] = total_progress = 25
+        else:
+            if self.migration_progress[share_ref["id"]] < 100:
+                self.migration_progress[share_ref["id"]] += 25
+            total_progress = self.migration_progress[share_ref["id"]]
+        LOG.debug(
+            ("Progress of current dummy share migration "
+             "with ID '%(id)s' is %(progress).") % {
+                "id": share_ref["id"], "progress": total_progress})
+        return {"total_progress": total_progress}
+
+    def migration_get_driver_info(self, context, share, dest_host,
+                                  share_server=None):
+        """Is called to provide necessary driver migration logic."""
+        return {"share_driver": self.configuration.share_driver}

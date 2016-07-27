@@ -192,7 +192,7 @@ elif [[ "$DRIVER" == "dummy" ]]; then
     MANILA_TEMPEST_CONCURRENCY=24
     RUN_MANILA_CG_TESTS=True
     RUN_MANILA_MANAGE_TESTS=False
-    iniset $TEMPEST_CONFIG share run_migration_tests False
+    iniset $TEMPEST_CONFIG share run_migration_tests True
     iniset $TEMPEST_CONFIG share run_quota_tests True
     iniset $TEMPEST_CONFIG share run_replication_tests False
     iniset $TEMPEST_CONFIG share run_shrink_tests True
@@ -255,10 +255,6 @@ if [[ "$DRIVER" == "dummy" ]]; then
     save_tempest_results 1
     echo "First tempest run (DHSS=True) returned '$RETVAL'"
     iniset $TEMPEST_CONFIG share backend_names "GAMMA,DELTA"
-
-    # NOTE(vponomaryov): enable migration tests when its support added to
-    # dummy driver.
-    iniset $TEMPEST_CONFIG share run_migration_tests False
     iniset $TEMPEST_CONFIG share run_manage_unmanage_tests True
     iniset $TEMPEST_CONFIG share run_manage_unmanage_snapshot_tests True
     iniset $TEMPEST_CONFIG share run_replication_tests True
