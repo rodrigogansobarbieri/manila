@@ -258,6 +258,14 @@ class ShareRpcAPITestCase(test.TestCase):
                              force_host_copy=True,
                              notify=True)
 
+    def test_migration_driver_recovery(self):
+        fake_dest_host = "host@backend"
+        self._test_share_api('migration_driver_recovery',
+                             rpc_method='cast',
+                             version='1.12',
+                             share=self.fake_share,
+                             host=fake_dest_host)
+
     def test_migration_get_info(self):
         self._test_share_api('migration_get_info',
                              rpc_method='call',

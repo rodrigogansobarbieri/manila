@@ -335,68 +335,90 @@ class ShareDriver(object):
         raise NotImplementedError()
 
     def migration_start(
-            self, context, share_ref, dest_host, dest_driver_migration_info,
-            migrating_share_ref, access_rules, share_server=None,
-            dest_share_server=None):
-        """Is called to perform 1st phase of driver migration of a given share.
+            self, context, src_share_instance, dest_host,
+            dest_driver_migration_info, dest_share_instance, access_rules,
+            share_server=None, dest_share_server=None):
+        """Is called in source share's backend to start migration.
 
         Driver should implement this method if willing to perform migration
-        in an optimized way, useful for when driver understands destination
-        backend.
+        in an optimized way, useful for when source share's backend driver
+        is compatible with destination backend driver. This method should
+        start the migration procedure in the backend and end. Following steps
+        should be done in 'migration_continue'.
         :param context: The 'context.RequestContext' object for the request.
-        :param share_ref: Reference to the original share model.
+        :param src_share_instance: Reference to the original share model.
         :param dest_host: Destination host and its capabilities.
         :param dest_driver_migration_info: Migration information provided by
             destination host.
-        :param migrating_share_ref: Reference to the share model to be used by
+        :param dest_share_instance: Reference to the share model to be used by
             migrated share.
         :param access_rules: All access rules the migrating share should have.
         :param share_server: Share server model or None.
         :param dest_share_server: Destination Share server model or None.
-        :return: Boolean value indicating if driver migration succeeded.
-        :return: List of export locations to update the share with.
         """
+        raise NotImplementedError()
 
-        return None, None
+    def migration_continue(
+            self, context, src_share_instance, dest_host,
+            dest_driver_migration_info, dest_share_instance, access_rules,
+            share_server=None, dest_share_server=None):
+        """Is called in source share's backend to continue migration.
+
+        Driver should implement this method to continue monitor the migration
+        progress in storage and perform following steps until 1st phase is
+        completed.
+        :param context: The 'context.RequestContext' object for the request.
+        :param src_share_instance: Reference to the original share model.
+        :param dest_host: Destination host and its capabilities.
+        :param dest_driver_migration_info: Migration information provided by
+            destination host.
+        :param dest_share_instance: Reference to the share model to be used by
+            migrated share.
+        :param access_rules: All access rules the migrating share should have.
+        :param share_server: Share server model or None.
+        :param dest_share_server: Destination Share server model or None.
+        :return: Boolean value to indicate if 1st phase is finished.
+        """
+        raise NotImplementedError()
 
     def migration_complete(
-            self, context, share_ref, dest_host, dest_driver_migration_info,
-            migrating_share_ref, access_rules, share_server=None,
-            dest_share_server=None):
-        """Is called to perform 2nd phase of driver migration of a given share.
+            self, context, src_share_instance, dest_host,
+            dest_driver_migration_info, dest_share_instance, access_rules,
+            share_server=None, dest_share_server=None):
+        """Is called in source share's backend to complete migration.
 
         If driver is implementing 2-phase migration, this method should
-        perform tasks related to the 2nd phase of migration, thus completing
-        it. Driver should also delete all original share data from source
-        backend.
+        perform the disruptive tasks related to the 2nd phase of migration,
+        thus completing it. Driver should also delete all original share data
+        from source backend.
         :param context: The 'context.RequestContext' object for the request.
-        :param share_ref: Reference to the original share model.
+        :param src_share_instance: Reference to the original share model.
         :param dest_host: Destination host and its capabilities.
         :param dest_driver_migration_info: Migration information provided by
             destination host.
-        :param migrating_share_ref: Reference to the share model to be used by
+        :param dest_share_instance: Reference to the share model to be used by
             migrated share.
         :param access_rules: All access rules the migrating share should have.
         :param share_server: Share server model or None.
         :param dest_share_server: Destination Share server model or None.
         :return: List of export locations to update the share with.
         """
-
         return None
 
     def migration_cancel(
-            self, context, share_ref, dest_host, dest_driver_migration_info,
-            migrating_share_ref, share_server=None, dest_share_server=None):
-        """Is called to cancel driver migration.
+            self, context, src_share_instance, dest_host,
+            dest_driver_migration_info, dest_share_instance,
+            share_server=None, dest_share_server=None):
+        """Is called in source share's backend to cancel migration.
 
         If possible, driver can implement a way to cancel an in-progress
         migration.
         :param context: The 'context.RequestContext' object for the request.
-        :param share_ref: Reference to the original share model.
+        :param src_share_instance: Reference to the original share model.
         :param dest_host: Destination host and its capabilities.
         :param dest_driver_migration_info: Migration information provided by
             destination host.
-        :param migrating_share_ref: Reference to the share model to be used by
+        :param dest_share_instance: Reference to the share model to be used by
             migrated share.
         :param share_server: Share server model or None.
         :param dest_share_server: Destination Share server model or None.
@@ -404,23 +426,24 @@ class ShareDriver(object):
         raise NotImplementedError()
 
     def migration_get_progress(
-            self, context, share_ref, dest_host, dest_driver_migration_info,
-            migrating_share_ref, share_server=None, dest_share_server=None):
-        """Is called to get migration progress.
+            self, context, src_share_instance, dest_host,
+            dest_driver_migration_info, dest_share_instance,
+            share_server=None, dest_share_server=None):
+        """Is called in source share's backend to obtain migration progress.
 
         If possible, driver can implement a way to return migration progress
         information.
         :param context: The 'context.RequestContext' object for the request.
-        :param share_ref: Reference to the original share model.
+        :param src_share_instance: Reference to the original share model.
         :param dest_host: Destination host and its capabilities.
         :param dest_driver_migration_info: Migration information provided by
             destination host.
-        :param migrating_share_ref: Reference to the share model to be used by
+        :param dest_share_instance: Reference to the share model to be used by
             migrated share.
         :param share_server: Share server model or None.
         :param dest_share_server: Destination Share server model or None.
-        :return: A dictionary with 'total_progress' field containing the
-            percentage value.
+        :return: A dictionary with at least 'total_progress' field containing
+            the percentage value.
         """
         raise NotImplementedError()
 

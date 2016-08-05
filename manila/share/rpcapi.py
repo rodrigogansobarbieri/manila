@@ -136,6 +136,12 @@ class ShareAPI(object):
                           force_host_copy=force_host_copy,
                           notify=notify)
 
+    def migration_driver_recovery(self, context, share, host):
+        call_context = self.client.prepare(server=host, version='1.12')
+        call_context.cast(context,
+                          'migration_driver_recovery',
+                          share_id=share['id'])
+
     def migration_get_info(self, context, share_instance):
         new_host = utils.extract_host(share_instance['host'])
         call_context = self.client.prepare(server=new_host, version='1.6')
