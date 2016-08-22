@@ -310,6 +310,7 @@ function create_service_share_servers {
                 iniset $MANILA_CONF $BE service_instance_name_or_id $vm_id
                 iniset $MANILA_CONF $BE service_net_name_or_ip private
                 iniset $MANILA_CONF $BE tenant_net_name_or_ip private
+                iniset $MANILA_CONF $BE connect_share_server_to_tenant_network True
             else
                 if is_service_enabled neutron; then
                     if [ $created_admin_network == false ]; then
@@ -325,8 +326,6 @@ function create_service_share_servers {
                         fi
                         created_admin_network=true
                     fi
-                    iniset $MANILA_CONF $BE admin_network_id $admin_net_id
-                    iniset $MANILA_CONF $BE admin_subnet_id $admin_subnet_id
                 fi
             fi
         fi
