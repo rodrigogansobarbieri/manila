@@ -50,6 +50,7 @@ class DummyDriver(driver.ShareDriver):
         self.backend_name = self.configuration.safe_get(
             "share_backend_name") or "DummyDriver"
         self.migration_progress = {}
+        self.migration = 0
 
     def _get_share_name(self, share):
         return "share_%(s_id)s_%(si_id)s" % {
@@ -332,32 +333,46 @@ class DummyDriver(driver.ShareDriver):
             "id": replica_snapshot["id"], "status": constants.STATUS_AVAILABLE}
 
     def migration_check_compatibility(
-            self, context, share_ref, dest_host, dest_driver_migration_info,
-            share_server=None):
+            self, context, src_share_instance, dest_host,
+            dest_driver_migration_info, dest_share_instance,
+            share_server=None, dest_share_server=None):
         """Is called to test compatibility with destination backend."""
         return self.configuration.share_driver == (
             dest_driver_migration_info.get("share_driver"))
 
     def migration_start(
-            self, context, share_ref, dest_host, dest_driver_migration_info,
-            migrating_share_ref, access_rules, share_server=None,
-            dest_share_server=None):
+            self, context, src_share_instance, dest_host,
+            dest_driver_migration_info, dest_share_instance,
+            share_server=None, dest_share_server=None):
         """Is called to perform 1st phase of driver migration of a given share.
 
         """
         LOG.debug(
             "Migration of dummy share with ID '%s' has been started." %
-            share_ref["id"])
-        return True, {}
+            src_share_instance["id"])
+        self.migration = 0
+
+    def migration_continue(
+            self, context, src_share_instance, dest_host,
+            dest_driver_migration_info, dest_share_instance,
+            share_server=None, dest_share_server=None):
+        self.migration = self.migration + 1
+        LOG.debug(
+            "Migration of dummy share with ID '%s' is continuing, %s." %
+            (src_share_instance["id"], self.migration))
+        if self.migration == 3:
+            return True
+        else:
+            return False
 
     def migration_complete(
-            self, context, share_ref, dest_host, dest_driver_migration_info,
-            migrating_share_ref, access_rules, share_server=None,
-            dest_share_server=None):
+            self, context, src_share_instance, dest_host,
+            dest_driver_migration_info, dest_share_instance,
+            share_server=None, dest_share_server=None):
         """Is called to perform 2nd phase of driver migration of a given share.
 
         """
-        return self._do_migration(share_ref, share_server)
+        return self._do_migration(src_share_instance, share_server)
 
     def _do_migration(self, share_ref, share_server):
         share_name = self._get_share_name(share_ref)
@@ -377,29 +392,31 @@ class DummyDriver(driver.ShareDriver):
             mountpoint, share_server=share_server)
 
     def migration_cancel(
-            self, context, share_ref, dest_host, dest_driver_migration_info,
-            migrating_share_ref, share_server=None, dest_share_server=None):
+            self, context, src_share_instance, dest_host,
+            dest_driver_migration_info, dest_share_instance,
+            share_server=None, dest_share_server=None):
         """Is called to cancel driver migration."""
         LOG.debug(
             "Migration of dummy share with ID '%s' has been canceled." %
-            share_ref["id"])
-        self.migration_progress.pop(share_ref["id"], None)
+            src_share_instance["id"])
+        self.migration_progress.pop(src_share_instance["id"], None)
 
     def migration_get_progress(
-            self, context, share_ref, dest_host, dest_driver_migration_info,
-            migrating_share_ref, share_server=None, dest_share_server=None):
+            self, context, src_share_instance, dest_host,
+            dest_driver_migration_info, dest_share_instance,
+            share_server=None, dest_share_server=None):
         """Is called to get migration progress."""
         # Simulate migration progress.
-        if share_ref["id"] not in self.migration_progress:
-            self.migration_progress[share_ref["id"]] = total_progress = 25
+        if src_share_instance["id"] not in self.migration_progress:
+            self.migration_progress[src_share_instance["id"]] = total_progress = 25
         else:
-            if self.migration_progress[share_ref["id"]] < 100:
-                self.migration_progress[share_ref["id"]] += 25
-            total_progress = self.migration_progress[share_ref["id"]]
+            if self.migration_progress[src_share_instance["id"]] < 100:
+                self.migration_progress[src_share_instance["id"]] += 25
+            total_progress = self.migration_progress[src_share_instance["id"]]
         LOG.debug(
             ("Progress of current dummy share migration "
              "with ID '%(id)s' is %(progress).") % {
-                "id": share_ref["id"], "progress": total_progress})
+                "id": src_share_instance["id"], "progress": total_progress})
         return {"total_progress": total_progress}
 
     def migration_get_driver_info(self, context, share, dest_host,
