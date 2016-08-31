@@ -1438,7 +1438,7 @@ class ZFSonLinuxShareDriver(zfs_utils.ExecuteMixin, driver.ShareDriver):
                     executor=self._get_shell_executor_by_host(
                         destination_share['host']),
                 )
-                return True
+                return True, None
             except exception.ProcessExecutionError as e:
                 raise exception.ZFSonLinuxException(msg=_(
                     'Migration process is absent and dst dataset '

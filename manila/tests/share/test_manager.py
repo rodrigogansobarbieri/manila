@@ -4036,15 +4036,14 @@ class ShareManagerTestCase(test.TestCase):
         self.share_manager._migration_delete_instance.assert_called_once_with(
             self.context, migrating_instance['id'])
 
-    @ddt.data(Exception('fake'), False, True)
+    @ddt.data(Exception('fake'), (False, None),
+              (True, 'fake_export_locations'))
     def test_migration_driver_continue(self, finished):
-
+        fake_export_locations = 'fake_export_locations'
         share = db_utils.create_share(
             task_state=constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS)
         share_cancelled = db_utils.create_share(
             task_state=constants.TASK_STATE_MIGRATION_CANCELLED)
-        if finished:
-            share_cancelled = share
         src_server = db_utils.create_share_server()
         dest_server = db_utils.create_share_server()
         regular_instance = db_utils.create_share_instance(
@@ -4073,14 +4072,18 @@ class ShareManagerTestCase(test.TestCase):
                          mock.Mock(return_value=dest_instance))
         self.mock_object(self.share_manager.db, 'share_server_get',
                          mock.Mock(side_effect=[src_server, dest_server]))
-        self.mock_object(self.share_manager.driver, 'migration_continue',
-                         mock.Mock(side_effect=[finished]))
+        self.mock_object(
+            self.share_manager.driver, 'migration_continue',
+            mock.Mock(side_effect=[finished]))
         self.mock_object(self.share_manager.db, 'share_instance_update')
         self.mock_object(self.share_manager.db, 'share_update')
         self.mock_object(self.share_manager, '_migration_delete_instance')
-        share_get_calls = [mock.call(self.context, 'share_id')]
+        self.mock_object(
+            self.share_manager.db, 'share_export_locations_update')
 
         self.share_manager.migration_driver_continue(self.context)
+
+        share_get_calls = [mock.call(self.context, 'share_id')]
 
         if isinstance(finished, Exception):
             self.share_manager.db.share_update.assert_called_once_with(
@@ -4093,11 +4096,14 @@ class ShareManagerTestCase(test.TestCase):
              assert_called_once_with(self.context, dest_instance['id']))
 
         else:
-            if finished:
+            if finished[0]:
                 self.share_manager.db.share_update.assert_called_once_with(
                     self.context, 'share_id',
                     {'task_state':
                      constants.TASK_STATE_MIGRATION_DRIVER_PHASE1_DONE})
+                (self.share_manager.db.share_export_locations_update.
+                 assert_called_once_with(self.context, dest_instance['id'],
+                                         fake_export_locations))
             else:
                 share_get_calls.append(mock.call(self.context, 'share_id'))
                 self.assertTrue(manager.LOG.warning.called)

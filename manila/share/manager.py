@@ -817,7 +817,7 @@ class ShareManager(manager.SchedulerDependentManager):
 
                 try:
 
-                    finished = self.driver.migration_continue(
+                    finished, export_list = self.driver.migration_continue(
                         context, src_share_instance, dest_share_instance,
                         src_share_server, dest_share_server)
 
@@ -831,6 +831,11 @@ class ShareManager(manager.SchedulerDependentManager):
                         LOG.info(_LI("Share Migration for share %s completed "
                                      "first phase successfully."),
                                  share['id'])
+
+                        if export_list:
+                            self.db.share_export_locations_update(
+                                context, dest_share_instance['id'],
+                                export_list)
                     else:
                         share = self.db.share_get(
                             context, instance['share_id'])

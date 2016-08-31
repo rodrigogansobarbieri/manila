@@ -367,7 +367,14 @@ class DummyDriver(driver.ShareDriver):
             (source_share["id"],
              self.migration_progress[source_share["id"]]))
 
-        return self.migration_progress[source_share["id"]] == 100
+        if self.migration_progress[source_share["id"]] == 100:
+            source_share_info = self.private_storage.get(source_share['id'])
+            old_export_locations = self._generate_export_locations(
+                source_share_info['fake_provider_location'],
+                share_server=share_server)
+            new_export_locations = self._do_migration(
+                destination_share, destination_share_server)
+            return True, old_export_locations + new_export_locations
 
     def migration_complete(
             self, context, source_share, destination_share,
@@ -375,7 +382,18 @@ class DummyDriver(driver.ShareDriver):
         """Is called to perform 2nd phase of driver migration of a given share.
 
         """
-        return self._do_migration(source_share, share_server)
+        LOG.debug(
+            "Migration of dummy share with ID '%s' has been completed." %
+            source_share["id"])
+
+        dest_share_info = self.private_storage.get(destination_share['id'])
+        export_locations = self._generate_export_locations(
+            dest_share_info['fake_provider_location'],
+            share_server=destination_share_server)
+
+        self.migration_progress.pop(source_share["id"], None)
+
+        return export_locations
 
     def _do_migration(self, share_ref, share_server):
         share_name = self._get_share_name(share_ref)
@@ -386,10 +404,6 @@ class DummyDriver(driver.ShareDriver):
                 "fake_provider_location": mountpoint,
             }
         )
-        LOG.debug(
-            "Migration of dummy share with ID '%s' has been completed." %
-            share_ref["id"])
-        self.migration_progress.pop(share_ref["id"], None)
 
         return self._generate_export_locations(
             mountpoint, share_server=share_server)

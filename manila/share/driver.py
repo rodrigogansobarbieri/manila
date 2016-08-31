@@ -409,7 +409,9 @@ class ShareDriver(object):
         :param share_server: Share server model or None.
         :param destination_share_server: Destination Share server model or
             None.
-        :return: Boolean value to indicate if 1st phase is finished.
+        :return: Tuple containing boolean value to indicate if 1st phase is
+            finished and list of export locations to update the destination
+            share.
         """
         raise NotImplementedError()
 
@@ -433,7 +435,7 @@ class ShareDriver(object):
         :param share_server: Share server model or None.
         :param destination_share_server: Destination Share server model or
             None.
-        :return: List of export locations to update the share with.
+        :return: List of export locations to update the destination share with.
         """
         raise NotImplementedError()
 

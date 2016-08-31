@@ -1677,6 +1677,49 @@ class ShareAPITestCase(test.TestCase):
         self.assertRaises(exception.InvalidShare, self.api.allow_access,
                           self.context, share, 'fakeacctype', 'fakeaccto')
 
+    @ddt.data(constants.TASK_STATE_DATA_COPYING_COMPLETED,
+              constants.TASK_STATE_MIGRATION_DRIVER_PHASE1_DONE)
+    def test_allow_access_status_migrating(self, task_state):
+        share = db_utils.create_share(
+            status=constants.STATUS_MIGRATING,
+            task_state=task_state)
+
+        access_values = {
+            'share_id': share['id'],
+            'access_type': 'fakeacctype',
+            'access_to': 'fakeaccto',
+            'access_level': None,
+        }
+
+        fake_access = {'id': 'fake_access_id'}
+
+        self.mock_object(db_api, 'share_get', mock.Mock(return_value=share))
+        self.mock_object(db_api, 'share_access_get',
+                         mock.Mock(return_value=fake_access))
+        self.mock_object(self.api, 'allow_access_to_instance')
+        self.mock_object(db_api, 'share_access_get_all_by_type_and_access',
+                         mock.Mock(return_value=[]))
+        self.mock_object(db_api, 'share_access_create',
+                         mock.Mock(return_value=fake_access))
+
+        self.api.allow_access(self.context, share, 'fakeacctype', 'fakeaccto')
+
+        self.api.allow_access_to_instance.assert_called_once_with(
+            self.context, share.instance, fake_access)
+        db_api.share_access_get_all_by_type_and_access.assert_called_once_with(
+            self.context, share['id'], 'fakeacctype', 'fakeaccto')
+        db_api.share_access_create.assert_called_once_with(
+            self.context, access_values)
+        db_api.share_access_get.assert_called_once_with(
+            self.context, fake_access['id'])
+
+    def test_allow_access_status_migrating_not_ready(self):
+        share = db_utils.create_share(
+            status=constants.STATUS_MIGRATING,
+            task_state=constants.TASK_STATE_DATA_COPYING_STARTING)
+        self.assertRaises(exception.InvalidShare, self.api.allow_access,
+                          self.context, share, 'fakeacctype', 'fakeaccto')
+
     def test_allow_access_no_host(self):
         share = db_utils.create_share(host=None)
         self.assertRaises(exception.InvalidShare, self.api.allow_access,
@@ -1805,6 +1848,32 @@ class ShareAPITestCase(test.TestCase):
                          mock.Mock(side_effect=[exception.NotFound('fake')]))
         self.api.deny_access(self.context, share, access)
         share_api.policy.check_policy.assert_called_with(
+            self.context, 'share', 'deny_access')
+
+    @ddt.data(constants.TASK_STATE_DATA_COPYING_COMPLETED,
+              constants.TASK_STATE_MIGRATION_DRIVER_PHASE1_DONE)
+    def test_deny_access_status_migrating(self, task_state):
+        share = db_utils.create_share(
+            status=constants.STATUS_MIGRATING,
+            task_state=task_state)
+
+        self.mock_object(db_api, 'share_get', mock.Mock(return_value=share))
+        self.mock_object(self.api, 'deny_access_to_instance')
+
+        self.api.deny_access(self.context, share, 'fakeacc')
+
+        share_api.policy.check_policy.assert_called_once_with(
+            self.context, 'share', 'deny_access')
+        self.api.deny_access_to_instance.assert_called_once_with(
+            self.context, share.instance, 'fakeacc')
+
+    def test_deny_access_status_migrating_not_ready(self):
+        share = db_utils.create_share(
+            status=constants.STATUS_MIGRATING,
+            task_state=constants.TASK_STATE_DATA_COPYING_STARTING)
+        self.assertRaises(exception.InvalidShare, self.api.deny_access,
+                          self.context, share, 'fakeacc')
+        share_api.policy.check_policy.assert_called_once_with(
             self.context, 'share', 'deny_access')
 
     def test_deny_access_status_not_available(self):

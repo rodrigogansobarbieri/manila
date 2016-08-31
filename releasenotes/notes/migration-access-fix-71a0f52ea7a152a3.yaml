@@ -1,0 +1,8 @@
+---
+fixes:
+  - Fixed Share migration not allowing user to mount share before
+    completing migration.
+  - Fixed migration-start driver interface not returning updated
+    export locations to allow destination share instance to be
+    mounted.
+
