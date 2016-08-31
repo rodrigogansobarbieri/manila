@@ -149,6 +149,13 @@ class MigrationNFSTest(base.BaseSharesAdminTest):
         self.assertEqual(task_state, progress['task_state'])
         self.assertEqual(100, progress['total_progress'])
 
+        self.shares_v2_client.create_access_rule(
+            share['id'], access_to="52.52.52.52", access_level="rw")
+
+        self.shares_v2_client.wait_for_share_status(
+            share['id'], constants.RULE_STATE_ACTIVE,
+            status_attr='access_rules_status')
+
         share = self.migration_complete(share['id'], dest_pool)
 
         self._validate_migration_successful(
@@ -171,13 +178,15 @@ class MigrationNFSTest(base.BaseSharesAdminTest):
             share['id'], access_to="50.50.50.50", access_level="rw")
 
         self.shares_v2_client.wait_for_share_status(
-            share['id'], 'active', status_attr='access_rules_status')
+            share['id'], constants.RULE_STATE_ACTIVE,
+            status_attr='access_rules_status')
 
         self.shares_v2_client.create_access_rule(
             share['id'], access_to="51.51.51.51", access_level="ro")
 
         self.shares_v2_client.wait_for_share_status(
-            share['id'], 'active', status_attr='access_rules_status')
+            share['id'], constants.RULE_STATE_ACTIVE,
+            status_attr='access_rules_status')
 
         default_type = self.shares_v2_client.list_share_types(
             default=True)['share_type']
@@ -216,9 +225,43 @@ class MigrationNFSTest(base.BaseSharesAdminTest):
         # Share migrated
         if complete:
             self.assertEqual(dest_pool, share['host'])
+
+            rules = self.shares_v2_client.list_access_rules(share['id'])
+            expected_rules = [{
+                'state': constants.RULE_STATE_ACTIVE,
+                'access_to': '50.50.50.50',
+                'access_type': 'ip',
+                'access_level': 'rw',
+            }, {
+                'state': constants.RULE_STATE_ACTIVE,
+                'access_to': '51.51.51.51',
+                'access_type': 'ip',
+                'access_level': 'ro',
+            }, {
+                'state': constants.RULE_STATE_ACTIVE,
+                'access_to': '52.52.52.52',
+                'access_type': 'ip',
+                'access_level': 'rw',
+            }]
+            filtered_rules = [{'state': rule['state'],
+                               'access_to': rule['access_to'],
+                               'access_level': rule['access_level'],
+                               'access_type': rule['access_type']}
+                              for rule in rules]
+
+            filtered_rules = sorted(filtered_rules,
+                                    key=lambda x: x['access_to'])
+            expected_rules = sorted(expected_rules,
+                                    key=lambda x: x['access_to'])
+
+            i = 0
+            while i < len(expected_rules):
+                self.assertDictMatch(expected_rules[i], filtered_rules[i])
+
             self.shares_v2_client.delete_share(share['id'])
             self.shares_v2_client.wait_for_resource_deletion(
                 share_id=share['id'])
+
         # Share not migrated yet
         else:
             self.assertNotEqual(dest_pool, share['host'])
