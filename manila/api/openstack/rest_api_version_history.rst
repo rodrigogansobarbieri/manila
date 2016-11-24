@@ -133,7 +133,7 @@ user documentation.
 
 2.22
 ----
-  Updated migration_start API with 'preserve-metadata', 'writable',
+  Updated migration_start API with 'preserve_metadata', 'writable',
   'nondisruptive' and 'new_share_network_id' parameters, renamed
   'force_host_copy' to 'force_host_assisted_migration', removed 'notify'
   parameter and removed previous migrate_share API support. Updated
@@ -163,3 +163,10 @@ user documentation.
   snapshot. The share is reverted in place, and the snapshot must be the most
   recent one known to manila. The feature is controlled by a new standard
   optional extra spec, revert_to_snapshot_support.
+
+2.28
+----
+  Updated migration_start API adding mandatory parameter 'preserve_snapshots'
+  and changed 'preserve_metadata', 'writable', 'nondisruptive' to be mandatory
+  as well. All previous migration_start APIs prior to this microversion are now
+  unsupported.

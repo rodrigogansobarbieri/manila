@@ -625,8 +625,23 @@ class ShareSnapshot(BASE, ManilaBase):
             replica_snapshots = list(filter(
                 lambda x: qualified_replica(x.share_instance), self.instances))
 
-            snapshot_instances = replica_snapshots or self.instances
-            result = snapshot_instances[0]
+            migrating_snapshots = list(filter(
+                lambda x: x.share_instance['status'] ==
+                constants.STATUS_MIGRATING, self.instances))
+
+            snapshot_instances = (replica_snapshots or migrating_snapshots
+                                  or self.instances)
+
+            order = (constants.STATUS_MIGRATING, constants.STATUS_AVAILABLE,
+                     constants.STATUS_ERROR)
+            other_statuses = [x['status'] for x in snapshot_instances if
+                              x['status'] not in order]
+            order = (order + tuple(other_statuses))
+
+            sorted_instances = sorted(
+                snapshot_instances, key=lambda x: order.index(x['status']))
+
+            result = sorted_instances[0]
 
         return result
 
@@ -652,7 +667,8 @@ class ShareSnapshot(BASE, ManilaBase):
             return self.status
 
         order = (constants.STATUS_DELETING, constants.STATUS_CREATING,
-                 constants.STATUS_ERROR, constants.STATUS_AVAILABLE)
+                 constants.STATUS_ERROR, constants.STATUS_MIGRATING,
+                 constants.STATUS_AVAILABLE)
         other_statuses = [x['status'] for x in self.instances if
                           x['status'] not in order]
         order = (order + tuple(other_statuses))
