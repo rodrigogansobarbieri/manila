@@ -30,12 +30,15 @@ class ShareInstanceAccess(object):
         self.db = db
         self.driver = driver
 
-    def update_access_rules(self, context, share_instance_id, add_rules=None,
+    def update_access_rules(self, context, share_instance_id,
+                            cast_to_readonly=False, add_rules=None,
                             delete_rules=None, share_server=None):
         """Update access rules in driver and database for given share instance.
 
         :param context: current context
         :param share_instance_id: Id of the share instance model
+        :param cast_to_readonly: If access rules should be passed to driver as
+        read-only.
         :param add_rules: list with ShareAccessMapping models or None - rules
         which should be added
         :param delete_rules: list with ShareAccessMapping models, "all", None
@@ -55,12 +58,14 @@ class ShareInstanceAccess(object):
         _update_access_rules_locked(
             context=context,
             share_instance_id=share_instance_id,
+            cast_to_readonly=cast_to_readonly,
             add_rules=add_rules,
             delete_rules=delete_rules,
             share_server=share_server,
         )
 
-    def _update_access_rules(self, context, share_instance_id, add_rules=None,
+    def _update_access_rules(self, context, share_instance_id,
+                             cast_to_readonly=False, add_rules=None,
                              delete_rules=None, share_server=None):
         # Reget share instance
         share_instance = self.db.share_instance_get(
@@ -100,13 +105,29 @@ class ShareInstanceAccess(object):
                         if rule["id"] in delete_ids]
                     delete_rules = []
 
+        # NOTE(ganso): up to here we are certain of the rules that we are
+        # supposed to pass to drivers. 'rules' variable is using for validating
+        # the refresh mechanism, according to the 'supposed' rules.
+        driver_rules = rules
+
+        if share_instance['status'] == constants.STATUS_MIGRATING:
+
+            readonly_support = self.driver.configuration.safe_get(
+                'migration_readonly_rules_support')
+
+            if readonly_support:
+                for rule in driver_rules + add_rules:
+                    rule['access_level'] = constants.ACCESS_LEVEL_RO
+            else:
+                driver_rules = add_rules
+
         try:
             access_keys = None
             try:
                 access_keys = self.driver.update_access(
                     context,
                     share_instance,
-                    rules,
+                    driver_rules,
                     add_rules=add_rules,
                     delete_rules=delete_rules,
                     share_server=share_server
