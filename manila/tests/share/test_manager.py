@@ -1073,7 +1073,8 @@ class ShareManagerTestCase(test.TestCase):
     @ddt.data([], None)
     def test_promote_share_replica_driver_update_nothing_has_snaps(self,
                                                                    retval):
-        replica = fake_replica()
+        replica = fake_replica(
+            replication_type=constants.REPLICATION_TYPE_READABLE)
         active_replica = fake_replica(
             id='current_active_replica',
             replica_state=constants.REPLICA_STATE_ACTIVE)
@@ -1108,10 +1109,12 @@ class ShareManagerTestCase(test.TestCase):
         mock_replica_update = self.mock_object(db, 'share_replica_update')
         call_1 = mock.call(mock.ANY, replica['id'],
                            {'status': constants.STATUS_AVAILABLE,
-                            'replica_state': constants.REPLICA_STATE_ACTIVE})
+                            'replica_state': constants.REPLICA_STATE_ACTIVE,
+                            'cast_rules_to_readonly': False})
         call_2 = mock.call(
             mock.ANY, 'current_active_replica',
-            {'replica_state': constants.REPLICA_STATE_OUT_OF_SYNC})
+            {'replica_state': constants.REPLICA_STATE_OUT_OF_SYNC,
+             'cast_rules_to_readonly': True})
         expected_update_calls = [call_1, call_2]
 
         self.share_manager.promote_share_replica(self.context, replica)
@@ -1124,8 +1127,11 @@ class ShareManagerTestCase(test.TestCase):
             {'status': constants.STATUS_ERROR})
         self.assertEqual(2, mock_info_log.call_count)
 
-    def test_promote_share_replica_driver_updates_replica_list(self):
-        replica = fake_replica()
+    @ddt.data(constants.REPLICATION_TYPE_READABLE,
+              constants.REPLICATION_TYPE_WRITABLE,
+              constants.REPLICATION_TYPE_DR)
+    def test_promote_share_replica_driver_updates_replica_list(self, rtype):
+        replica = fake_replica(replication_type=rtype)
         active_replica = fake_replica(
             id='current_active_replica',
             replica_state=constants.REPLICA_STATE_ACTIVE)
@@ -1165,16 +1171,30 @@ class ShareManagerTestCase(test.TestCase):
         mock_export_locs_update = self.mock_object(
             db, 'share_export_locations_update')
         mock_replica_update = self.mock_object(db, 'share_replica_update')
+        reset_replication_change_updates = {
+            'replica_state': constants.STATUS_ACTIVE,
+            'status': constants.STATUS_AVAILABLE,
+            'cast_rules_to_readonly': False,
+        }
+        demoted_replica_updates = {
+            'replica_state': constants.REPLICA_STATE_IN_SYNC,
+            'cast_rules_to_readonly': False,
+        }
+        if rtype == constants.REPLICATION_TYPE_READABLE:
+            demoted_replica_updates['cast_rules_to_readonly'] = True
         reset_replication_change_call = mock.call(
-            mock.ANY, replica['id'], {'replica_state': constants.STATUS_ACTIVE,
-                                      'status': constants.STATUS_AVAILABLE})
+            mock.ANY, replica['id'], reset_replication_change_updates)
+        demoted_replica_update_call = mock.call(
+            mock.ANY, active_replica['id'], demoted_replica_updates
+        )
 
         self.share_manager.promote_share_replica(self.context, replica)
 
         self.assertEqual(2, mock_export_locs_update.call_count)
         self.assertEqual(2, mock_replica_update.call_count)
-        self.assertIn(
-            reset_replication_change_call, mock_replica_update.mock_calls)
+        mock_replica_update.assert_has_calls([
+            reset_replication_change_call, demoted_replica_update_call,
+        ])
         self.assertTrue(mock_info_log.called)
         self.assertFalse(mock_snap_instance_update.called)
 
@@ -3686,6 +3706,7 @@ class ShareManagerTestCase(test.TestCase):
         fake_service = {'availability_zone_id': 'fake_az_id'}
 
         # mocks
+        self.mock_object(self.share_manager, '_reset_read_only_access_rules')
         self.mock_object(self.share_manager.db, 'service_get_by_args',
                          mock.Mock(return_value=fake_service))
         self.mock_object(self.share_manager.db, 'share_update')
@@ -3712,8 +3733,10 @@ class ShareManagerTestCase(test.TestCase):
             {'status': constants.STATUS_AVAILABLE})
         self.share_manager.db.share_get.assert_called_once_with(
             self.context, 'share_id')
-        self.share_manager.db.service_get_by_args(
-            self.context, 'fake2@backend', 'manila-share')
+        self.share_manager.db.service_get_by_args.assert_called_once_with(
+            self.context, 'fake@backend', 'manila-share')
+        (self.share_manager._reset_read_only_access_rules.
+         assert_called_once_with(self.context, share, instance['id']))
 
     def test_migration_start_exception(self):
 
@@ -3739,6 +3762,7 @@ class ShareManagerTestCase(test.TestCase):
                          mock.Mock(side_effect=Exception('fake_exc_1')))
         self.mock_object(self.share_manager, '_migration_start_host_assisted',
                          mock.Mock(side_effect=Exception('fake_exc_2')))
+        self.mock_object(self.share_manager, '_reset_read_only_access_rules')
 
         # run
         self.assertRaises(
@@ -3762,6 +3786,8 @@ class ShareManagerTestCase(test.TestCase):
                 {'task_state': constants.TASK_STATE_MIGRATION_ERROR})
         ]
 
+        (self.share_manager._reset_read_only_access_rules.
+         assert_called_once_with(self.context, share, instance['id']))
         self.share_manager.db.share_update.assert_has_calls(share_update_calls)
         self.share_manager.db.share_instance_update.assert_called_once_with(
             self.context, instance['id'],
@@ -3785,18 +3811,26 @@ class ShareManagerTestCase(test.TestCase):
         server = 'share_server'
         src_connection_info = 'src_fake_info'
         dest_connection_info = 'dest_fake_info'
-
+        instance_updates = [
+            mock.call(
+                self.context, instance['id'],
+                {'access_rules_status': constants.STATUS_OUT_OF_SYNC,
+                 'cast_rules_to_readonly': True})
+        ]
         # mocks
+        helper = mock.Mock()
+        self.mock_object(migration_api, 'ShareMigrationHelper',
+                         mock.Mock(return_value=helper))
+        self.mock_object(helper, 'cleanup_new_instance')
         self.mock_object(self.share_manager.db, 'share_server_get',
                          mock.Mock(return_value=server))
-        self.mock_object(self.share_manager.db, 'share_instance_update',
-                         mock.Mock(return_value=server))
+        self.mock_object(self.share_manager.db, 'share_instance_update')
         self.mock_object(self.share_manager.db,
                          'share_instance_update_access_status')
         self.mock_object(self.share_manager.access_helper,
                          'update_access_rules')
         if exc is None:
-            self.mock_object(migration_api.ShareMigrationHelper,
+            self.mock_object(helper,
                              'create_instance_and_wait',
                              mock.Mock(return_value=new_instance))
             self.mock_object(self.share_manager.driver, 'connection_get_info',
@@ -3805,14 +3839,13 @@ class ShareManagerTestCase(test.TestCase):
                              mock.Mock(return_value=dest_connection_info))
             self.mock_object(data_rpc.DataAPI, 'migration_start',
                              mock.Mock(side_effect=Exception('fake')))
-            self.mock_object(migration_api.ShareMigrationHelper,
-                             'cleanup_new_instance')
+            self.mock_object(helper, 'cleanup_new_instance')
+            instance_updates.append(
+                mock.call(self.context, new_instance['id'],
+                          {'status': constants.STATUS_MIGRATING_TO}))
         else:
-            self.mock_object(migration_api.ShareMigrationHelper,
-                             'create_instance_and_wait',
+            self.mock_object(helper, 'create_instance_and_wait',
                              mock.Mock(side_effect=exc))
-        self.mock_object(migration_api.ShareMigrationHelper,
-                         'cleanup_access_rules')
 
         # run
         self.assertRaises(
@@ -3825,23 +3858,14 @@ class ShareManagerTestCase(test.TestCase):
         self.share_manager.db.share_server_get.assert_called_once_with(
             utils.IsAMatcher(context.RequestContext),
             instance['share_server_id'])
-        (self.share_manager.db.share_instance_update_access_status.
-         assert_called_once_with(self.context, instance['id'],
-                                 constants.STATUS_OUT_OF_SYNC))
+        self.share_manager.db.share_instance_update.assert_has_calls(
+            instance_updates, any_order=True)
         (self.share_manager.access_helper.update_access_rules.
          assert_called_once_with(
              self.context, instance['id'], share_server=server))
-        migration_api.ShareMigrationHelper.create_instance_and_wait.\
-            assert_called_once_with(share, 'fake_host', 'fake_net_id',
-                                    'fake_az_id', 'fake_type_id')
-        migration_api.ShareMigrationHelper.\
-            cleanup_access_rules.assert_called_once_with(
-                instance, server, self.share_manager.driver)
+        helper.create_instance_and_wait.assert_called_once_with(
+            share, 'fake_host', 'fake_net_id', 'fake_az_id', 'fake_type_id')
         if exc is None:
-            self.share_manager.db.share_instance_update.\
-                assert_called_once_with(
-                    self.context, new_instance['id'],
-                    {'status': constants.STATUS_MIGRATING_TO})
             self.share_manager.driver.connection_get_info.\
                 assert_called_once_with(self.context, instance, server)
             rpcapi.ShareAPI.connection_get_info.assert_called_once_with(
@@ -3849,8 +3873,7 @@ class ShareManagerTestCase(test.TestCase):
             data_rpc.DataAPI.migration_start.assert_called_once_with(
                 self.context, share['id'], ['lost+found'], instance['id'],
                 new_instance['id'], src_connection_info, dest_connection_info)
-            migration_api.ShareMigrationHelper.\
-                cleanup_new_instance.assert_called_once_with(new_instance)
+            helper.cleanup_new_instance.assert_called_once_with(new_instance)
 
     @ddt.data({'share_network_id': 'fake_net_id', 'exc': None},
               {'share_network_id': None, 'exc': Exception('fake')},
@@ -3931,9 +3954,12 @@ class ShareManagerTestCase(test.TestCase):
                     {'task_state':
                      constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS})
             ])
-            (self.share_manager.db.share_instance_update_access_status.
-             assert_called_once_with(self.context, src_instance['id'],
-                                     constants.STATUS_OUT_OF_SYNC))
+            (self.share_manager.db.share_instance_update.assert_has_calls([
+                mock.call(self.context, migrating_instance['id'],
+                          {'status': constants.STATUS_MIGRATING_TO}),
+                mock.call(self.context, src_instance['id'],
+                          {'access_rules_status': constants.STATUS_OUT_OF_SYNC,
+                           'cast_rules_to_readonly': True})]))
             (self.share_manager.access_helper.update_access_rules.
              assert_called_once_with(
                  self.context, src_instance['id'], share_server=src_server))
@@ -3963,10 +3989,6 @@ class ShareManagerTestCase(test.TestCase):
         if exc:
             (self.share_manager._migration_delete_instance.
              assert_called_once_with(self.context, migrating_instance['id']))
-
-        self.share_manager.db.share_instance_update.assert_called_once_with(
-            self.context, migrating_instance['id'],
-            {'status': constants.STATUS_MIGRATING_TO})
 
     @ddt.data({'writable': False, 'preserve_metadata': True,
                'nondisruptive': True, 'compatible': True},
@@ -4087,6 +4109,7 @@ class ShareManagerTestCase(test.TestCase):
         self.mock_object(self.share_manager.db, 'share_update')
         self.mock_object(self.share_manager, '_migration_delete_instance')
         share_get_calls = [mock.call(self.context, 'share_id')]
+        self.mock_object(self.share_manager, '_reset_read_only_access_rules')
 
         self.share_manager.migration_driver_continue(self.context)
 
@@ -4095,10 +4118,13 @@ class ShareManagerTestCase(test.TestCase):
                 self.context, 'share_id',
                 {'task_state': constants.TASK_STATE_MIGRATION_ERROR})
             (self.share_manager.db.share_instance_update.
-             assert_called_once_with(self.context, src_instance['id'],
-                                     {'status': constants.STATUS_AVAILABLE}))
+                assert_called_once_with(
+                    self.context, src_instance['id'],
+                    {'status': constants.STATUS_AVAILABLE}))
             (self.share_manager._migration_delete_instance.
              assert_called_once_with(self.context, dest_instance['id']))
+            (self.share_manager._reset_read_only_access_rules.
+             assert_called_once_with(self.context, share, src_instance['id']))
 
         else:
             if finished:
@@ -4214,22 +4240,20 @@ class ShareManagerTestCase(test.TestCase):
             share_server_id='fake_server_id')
         new_instance = db_utils.create_share_instance(share_id='fake_id')
         share = db_utils.create_share(id='fake_id', task_state=status)
-        server = 'fake_server'
+        helper = mock.Mock()
 
         # mocks
         self.mock_object(self.share_manager.db, 'share_instance_get',
                          mock.Mock(side_effect=[instance, new_instance]))
-        self.mock_object(self.share_manager.db, 'share_server_get',
-                         mock.Mock(return_value=server))
-        self.mock_object(migration_api.ShareMigrationHelper,
-                         'cleanup_new_instance')
-        self.mock_object(migration_api.ShareMigrationHelper,
-                         'cleanup_access_rules')
+        self.mock_object(helper, 'cleanup_new_instance')
+        self.mock_object(migration_api, 'ShareMigrationHelper',
+                         mock.Mock(return_value=helper))
         self.mock_object(self.share_manager.db, 'share_instance_update')
         self.mock_object(self.share_manager.db, 'share_update')
+        self.mock_object(self.share_manager, '_reset_read_only_access_rules')
+
         if status == constants.TASK_STATE_DATA_COPYING_COMPLETED:
-            self.mock_object(migration_api.ShareMigrationHelper,
-                             'apply_new_access_rules',
+            self.mock_object(helper, 'apply_new_access_rules',
                              mock.Mock(side_effect=Exception('fake')))
             self.mock_object(manager.LOG, 'exception')
 
@@ -4248,15 +4272,13 @@ class ShareManagerTestCase(test.TestCase):
             mock.call(self.context, instance['id'], with_share_data=True),
             mock.call(self.context, new_instance['id'], with_share_data=True)
         ])
-        self.share_manager.db.share_server_get.assert_called_once_with(
-            utils.IsAMatcher(context.RequestContext), 'fake_server_id')
 
+        cancelled = not(status == constants.TASK_STATE_DATA_COPYING_CANCELLED)
         if status != 'other':
-            migration_api.ShareMigrationHelper.cleanup_new_instance.\
-                assert_called_once_with(new_instance)
-            migration_api.ShareMigrationHelper.cleanup_access_rules.\
-                assert_called_once_with(instance, server,
-                                        self.share_manager.driver)
+            helper.cleanup_new_instance.assert_called_once_with(new_instance)
+            (self.share_manager._reset_read_only_access_rules.
+             assert_called_once_with(self.context, share, instance['id'],
+                                     helper=helper, supress_errors=cancelled))
         if status == constants.TASK_STATE_MIGRATION_CANCELLED:
             self.share_manager.db.share_instance_update.\
                 assert_called_once_with(self.context, instance['id'],
@@ -4265,8 +4287,8 @@ class ShareManagerTestCase(test.TestCase):
                 self.context, share['id'],
                 {'task_state': constants.TASK_STATE_MIGRATION_CANCELLED})
         if status == constants.TASK_STATE_DATA_COPYING_COMPLETED:
-            migration_api.ShareMigrationHelper.apply_new_access_rules.\
-                assert_called_once_with(new_instance)
+            helper.apply_new_access_rules. assert_called_once_with(
+                new_instance)
             self.assertTrue(manager.LOG.exception.called)
 
     def test__migration_complete_driver(self):
@@ -4342,13 +4364,10 @@ class ShareManagerTestCase(test.TestCase):
         share = db_utils.create_share(
             id='fake_id',
             task_state=constants.TASK_STATE_DATA_COPYING_COMPLETED)
-        server = 'fake_server'
 
         # mocks
         self.mock_object(self.share_manager.db, 'share_instance_get',
                          mock.Mock(side_effect=[instance, new_instance]))
-        self.mock_object(self.share_manager.db, 'share_server_get',
-                         mock.Mock(return_value=server))
         self.mock_object(self.share_manager.db, 'share_instance_update')
         self.mock_object(self.share_manager.db, 'share_update')
         self.mock_object(migration_api.ShareMigrationHelper,
@@ -4365,8 +4384,6 @@ class ShareManagerTestCase(test.TestCase):
             mock.call(self.context, instance['id'], with_share_data=True),
             mock.call(self.context, new_instance['id'], with_share_data=True)
         ])
-        self.share_manager.db.share_server_get.assert_called_once_with(
-            utils.IsAMatcher(context.RequestContext), 'fake_server_id')
 
         self.share_manager.db.share_instance_update.assert_has_calls([
             mock.call(self.context, new_instance['id'],
@@ -4403,6 +4420,9 @@ class ShareManagerTestCase(test.TestCase):
             share_id=share['id'], share_server_id=server_2['id'],
             host=dest_host)
 
+        helper = mock.Mock()
+        self.mock_object(migration_api, 'ShareMigrationHelper',
+                         mock.Mock(return_value=helper))
         self.mock_object(db, 'share_get', mock.Mock(return_value=share))
         self.mock_object(db, 'share_instance_get',
                          mock.Mock(side_effect=[instance_1, instance_2]))
@@ -4412,10 +4432,8 @@ class ShareManagerTestCase(test.TestCase):
         self.mock_object(db, 'share_server_get',
                          mock.Mock(side_effect=[server_1, server_2]))
         self.mock_object(self.share_manager.driver, 'migration_cancel')
-        self.mock_object(migration_api.ShareMigrationHelper,
-                         'cleanup_new_instance')
-        self.mock_object(migration_api.ShareMigrationHelper,
-                         'cleanup_access_rules')
+        self.mock_object(helper, 'cleanup_new_instance')
+        self.mock_object(self.share_manager, '_reset_read_only_access_rules')
 
         self.share_manager.migration_cancel(
             self.context, instance_1['id'], instance_2['id'])
@@ -4426,11 +4444,10 @@ class ShareManagerTestCase(test.TestCase):
             share_instance_update_calls.append(mock.call(
                 self.context, instance_2['id'],
                 {'status': constants.STATUS_INACTIVE}))
-            (migration_api.ShareMigrationHelper.cleanup_new_instance.
-             assert_called_once_with(instance_2))
-            (migration_api.ShareMigrationHelper.cleanup_access_rules.
-             assert_called_once_with(instance_1, server_1,
-                                     self.share_manager.driver))
+            (helper.cleanup_new_instance.assert_called_once_with(instance_2))
+            (self.share_manager._reset_read_only_access_rules.
+             assert_called_once_with(self.context, share, instance_1['id'],
+                                     helper=helper, supress_errors=False))
 
         else:
             self.share_manager.driver.migration_cancel.assert_called_once_with(

@@ -151,3 +151,7 @@ user documentation.
 2.25
 ----
   Added quota-show detail API.
+
+2.26
+----
+  Added cast_rules_to_readonly field to share_instances.

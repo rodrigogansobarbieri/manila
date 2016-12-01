@@ -47,12 +47,13 @@ CONF.register_opts(migration_opts)
 
 class ShareMigrationHelper(object):
 
-    def __init__(self, context, db, share):
+    def __init__(self, context, db, share, access_helper):
 
         self.db = db
         self.share = share
         self.context = context
         self.api = share_api.API()
+        self.access_helper = access_helper
 
         self.migration_create_delete_share_timeout = (
             CONF.migration_create_delete_share_timeout)
@@ -131,34 +132,19 @@ class ShareMigrationHelper(object):
             LOG.warning(_LW("Failed to cleanup new instance during generic"
                         " migration for share %s."), self.share['id'])
 
-    def cleanup_access_rules(self, share_instance, share_server, driver):
-
-        # NOTE(ganso): For the purpose of restoring the access rules, the share
-        # instance status must not be "MIGRATING", else they would be cast to
-        # read-only. We briefly change them to "INACTIVE" so they are restored
-        # and after cleanup finishes, the invoking method will set the status
-        # back to "AVAILABLE".
-        self.db.share_instance_update(self.context, share_instance['id'],
-                                      {'status': constants.STATUS_INACTIVE})
+    def cleanup_access_rules(self, share_instance, share_server):
 
         try:
-            self.revert_access_rules(share_instance, share_server, driver)
+            self.revert_access_rules(share_instance, share_server)
         except Exception:
             LOG.warning(_LW("Failed to cleanup access rules during generic"
                         " migration for share %s."), self.share['id'])
 
-    def revert_access_rules(self, share_instance, share_server, driver):
+    def revert_access_rules(self, share_instance, share_server):
 
-        rules = self.db.share_access_get_all_for_instance(
-            self.context, share_instance['id'])
-
-        if len(rules) > 0:
-            LOG.debug("Restoring all of share %s access rules according to "
-                      "DB.", self.share['id'])
-
-            driver.update_access(self.context, share_instance, rules,
-                                 add_rules=[], delete_rules=[],
-                                 share_server=share_server)
+        self.access_helper.update_access_rules(
+            self.context, share_instance['id'],
+            share_server=share_server)
 
     def apply_new_access_rules(self, new_share_instance):
 

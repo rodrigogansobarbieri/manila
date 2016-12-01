@@ -751,6 +751,7 @@ class ShareAPITestCase(test.TestCase):
                 'host': host,
                 'availability_zone_id': 'fake_id',
                 'share_type_id': 'fake_share_type',
+                'cast_rules_to_readonly': False,
             }
         )
         db_api.share_type_get.assert_called_once_with(
