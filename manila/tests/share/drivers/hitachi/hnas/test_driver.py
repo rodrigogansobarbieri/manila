@@ -992,7 +992,7 @@ class HitachiHNASTestCase(test.TestCase):
         self.assertEqual(expected, result)
 
     def test_manage_existing_snapshot(self):
-        self.mock_object(ssh.HNASSSHBackend, 'check_snapshot',
+        self.mock_object(ssh.HNASSSHBackend, 'check_directory',
                          mock.Mock(return_value=True))
         self.mock_object(self._driver, '_ensure_snapshot',
                          mock.Mock(return_value=[]))
@@ -1003,7 +1003,7 @@ class HitachiHNASTestCase(test.TestCase):
         out = self._driver.manage_existing_snapshot(manage_snapshot,
                                                     {'size': 20})
 
-        ssh.HNASSSHBackend.check_snapshot.assert_called_with(
+        ssh.HNASSSHBackend.check_directory.assert_called_with(
             '/snapshots/aa4a7710-f326-41fb-ad18-b4ad587fc87a'
             '/snapshot18-05-2106')
         self._driver._ensure_snapshot.assert_called_with(
@@ -1019,7 +1019,7 @@ class HitachiHNASTestCase(test.TestCase):
             'path': '172.24.44.10:/snapshots/'
                     '3377b015-a695-4a5a-8aa5-9b931b023380'}]
 
-        self.mock_object(ssh.HNASSSHBackend, 'check_snapshot',
+        self.mock_object(ssh.HNASSSHBackend, 'check_directory',
                          mock.Mock(return_value=True))
         self.mock_object(self._driver, '_ensure_snapshot',
                          mock.Mock(return_value=[], side_effect=exc))
@@ -1035,7 +1035,7 @@ class HitachiHNASTestCase(test.TestCase):
             snapshot_mount_support_nfs,
             {'size': 20, 'export_locations': export_locations})
 
-        ssh.HNASSSHBackend.check_snapshot.assert_called_with(
+        ssh.HNASSSHBackend.check_directory.assert_called_with(
             '/snapshots/62125744-fcdd-4f55-a8c1-d1498102f634'
             '/3377b015-a695-4a5a-8aa5-9b931b023380')
         self._driver._ensure_snapshot.assert_called_with(
@@ -1078,7 +1078,7 @@ class HitachiHNASTestCase(test.TestCase):
         self.assertTrue(self.mock_log.debug.called)
 
     def test_manage_inexistent_snapshot_exception(self):
-        self.mock_object(ssh.HNASSSHBackend, 'check_snapshot',
+        self.mock_object(ssh.HNASSSHBackend, 'check_directory',
                          mock.Mock(return_value=False))
 
         self.assertRaises(exception.ManageInvalidShareSnapshot,

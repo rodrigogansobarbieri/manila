@@ -1258,7 +1258,7 @@ class HitachiHNASDriver(driver.ShareDriver):
                                         'share_id': snapshot['share_id']}
             raise exception.ManageInvalidShareSnapshot(reason=msg)
 
-        if not self.hnas.check_snapshot(snapshot['provider_location']):
+        if not self.hnas.check_directory(snapshot['provider_location']):
             msg = _("Snapshot %(snap_id)s does not exist in "
                     "HNAS.") % {'snap_id': hnas_snapshot_id}
             raise exception.ManageInvalidShareSnapshot(reason=msg)
