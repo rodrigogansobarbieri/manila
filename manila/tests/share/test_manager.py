@@ -4444,6 +4444,9 @@ class ShareManagerTestCase(test.TestCase):
                 self.share_manager, '_migration_complete_host_assisted',
                 mock.Mock(side_effect=exc))
 
+        si_update = self.mock_object(
+            self.share_manager.db, 'share_instance_update')
+
         if exc:
             snapshot = db_utils.create_snapshot(share_id=share['id'])
             snapshot_ins1 = db_utils.create_snapshot_instance(
@@ -4456,19 +4459,22 @@ class ShareManagerTestCase(test.TestCase):
                 status=constants.STATUS_MIGRATING_TO)
             self.mock_object(manager.LOG, 'exception')
             self.mock_object(self.share_manager.db, 'share_update')
-            self.mock_object(self.share_manager.db, 'share_instance_update')
             self.mock_object(self.share_manager.db,
                              'share_snapshot_instance_update')
             self.mock_object(self.share_manager.db,
                              'share_snapshot_instance_get_all_with_filters',
                              mock.Mock(
                                  return_value=[snapshot_ins1, snapshot_ins2]))
+
             self.assertRaises(
                 exception.ShareMigrationFailed,
                 self.share_manager.migration_complete,
                 self.context, instance_1['id'], instance_2['id'])
 
         else:
+            instance_delete = self.mock_object(
+                self.share_manager, '_migration_delete_instance')
+
             self.share_manager.migration_complete(
                 self.context, instance_1['id'], instance_2['id'])
 
@@ -4527,8 +4533,18 @@ class ShareManagerTestCase(test.TestCase):
              assert_called_once_with('fake_type'))
             share_types.get_share_type.assert_called_once_with(
                 self.context, 'fake_type_id')
-            self.share_manager.db.share_update.assert_called_once_with(
-                self.context, share['id'], model_type_update)
+            self.share_manager.db.share_update.assert_has_calls([
+                mock.call(
+                    self.context, share['id'], model_type_update),
+                mock.call(
+                    self.context, instance_2['share_id'],
+                    {'task_state': constants.TASK_STATE_MIGRATION_SUCCESS})])
+
+            instance_delete.assert_called_once_with(
+                self.context, instance_1['id'])
+            si_update.assert_called_once_with(
+                self.context, instance_2['id'],
+                {'status': constants.STATUS_AVAILABLE})
 
     @ddt.data(constants.TASK_STATE_DATA_COPYING_ERROR,
               constants.TASK_STATE_DATA_COPYING_CANCELLED,
@@ -4646,9 +4662,7 @@ class ShareManagerTestCase(test.TestCase):
         self.mock_object(
             self.share_manager.access_helper, '_check_needs_refresh',
             mock.Mock(return_value=True))
-        self.mock_object(self.share_manager.db, 'share_instance_update')
         self.mock_object(self.share_manager.db, 'share_update')
-        self.mock_object(self.share_manager, '_migration_delete_instance')
         self.mock_object(migration_api.ShareMigrationHelper,
                          'apply_new_access_rules')
         self.mock_object(
@@ -4678,18 +4692,11 @@ class ShareManagerTestCase(test.TestCase):
             snapshot_mappings, src_server, dest_server)
         (migration_api.ShareMigrationHelper.apply_new_access_rules.
          assert_called_once_with(dest_instance))
-        self.share_manager._migration_delete_instance.assert_called_once_with(
-            self.context, src_instance['id'])
-        self.share_manager.db.share_instance_update.assert_called_once_with(
-            self.context, dest_instance['id'],
-            {'status': constants.STATUS_AVAILABLE})
-        self.share_manager.db.share_update.assert_has_calls([
-            mock.call(
+
+        self.share_manager.db.share_update.assert_called_once_with(
                 self.context, dest_instance['share_id'],
-                {'task_state': constants.TASK_STATE_MIGRATION_COMPLETING}),
-            mock.call(
-                self.context, dest_instance['share_id'],
-                {'task_state': constants.TASK_STATE_MIGRATION_SUCCESS})])
+                {'task_state': constants.TASK_STATE_MIGRATION_COMPLETING})
+
         (self.share_manager.db.share_snapshot_instance_get_all_with_filters.
          assert_has_calls([
              mock.call(self.context,
@@ -4726,10 +4733,7 @@ class ShareManagerTestCase(test.TestCase):
         # mocks
         self.mock_object(self.share_manager.db, 'share_instance_get',
                          mock.Mock(side_effect=[instance, new_instance]))
-        self.mock_object(self.share_manager.db, 'share_instance_update')
         self.mock_object(self.share_manager.db, 'share_update')
-        self.mock_object(migration_api.ShareMigrationHelper,
-                         'delete_instance_and_wait')
         self.mock_object(migration_api.ShareMigrationHelper,
                          'apply_new_access_rules')
 
@@ -4743,24 +4747,11 @@ class ShareManagerTestCase(test.TestCase):
             mock.call(self.context, new_instance['id'], with_share_data=True)
         ])
 
-        self.share_manager.db.share_instance_update.assert_has_calls([
-            mock.call(self.context, new_instance['id'],
-                      {'status': constants.STATUS_AVAILABLE}),
-            mock.call(self.context, instance['id'],
-                      {'status': constants.STATUS_INACTIVE})
-        ])
-        self.share_manager.db.share_update.assert_has_calls([
-            mock.call(
+        self.share_manager.db.share_update.assert_called_once_with(
                 self.context, share['id'],
-                {'task_state': constants.TASK_STATE_MIGRATION_COMPLETING}),
-            mock.call(
-                self.context, share['id'],
-                {'task_state': constants.TASK_STATE_MIGRATION_SUCCESS}),
-        ])
+                {'task_state': constants.TASK_STATE_MIGRATION_COMPLETING})
         migration_api.ShareMigrationHelper.apply_new_access_rules.\
             assert_called_once_with(new_instance)
-        migration_api.ShareMigrationHelper.delete_instance_and_wait.\
-            assert_called_once_with(instance)
 
     @ddt.data(constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS,
               constants.TASK_STATE_MIGRATION_DRIVER_PHASE1_DONE,
